@@ -28,7 +28,7 @@ function render(s){current=s;$('connection').textContent='Pi connected';$('conne
  const t=s.test, running=t.status==='running';$('run-test').disabled=running||busy;$('run-test').firstChild.textContent=running?'Test running… ':'Run system test ';
  $('test-state').textContent={not_run:'Not run this session',running:'Running · no servo commands',passed:'Passed',failed:'Needs attention'}[t.status];$('test-state').className='pill '+(t.status==='passed'?'ok':t.status==='failed'?'warn':'');
  $('test-detail').textContent=running?(t.telemetry?`${t.telemetry.frames} images processed. ${words[t.telemetry.phase]||t.telemetry.phase}.`:'Starting logic and ROS checks…'):t.status==='passed'?'Logic and ROS checks passed. Physical camera and arm remain unverified.':t.status==='failed'?'Check the output below for the failure.':'Run a test to see current results.';
- $('output').textContent=t.output||(running?'Test in progress…':'No test has been run since the dashboard started.');$('updated').textContent='Updated '+new Date().toLocaleTimeString();renderFrame();renderArm(s);renderJog(s);renderNode(s);renderCalib(s);
+ $('output').textContent=t.output||(running?'Test in progress…':'No test has been run since the dashboard started.');$('updated').textContent='Updated '+new Date().toLocaleTimeString();renderFrame();renderArm(s);renderJog(s);renderNode(s);renderCalib(s);renderGripper(s);
 }
 async function refresh(){try{const r=await fetch('/api/status',{signal:AbortSignal.timeout(5000)});if(!r.ok)throw Error(r.status);render(await r.json());}catch(e){$('connection').textContent='Pi unreachable';$('connection').className='pill warn';$('offline').hidden=false;$('run-test').disabled=true;}finally{setTimeout(refresh,1000);}}
 $('run-test').onclick=async()=>{busy=true;$('run-test').disabled=true;select('test');try{const r=await fetch('/api/test',{method:'POST',headers:{'X-Arm-Dashboard':'1'},signal:AbortSignal.timeout(5000)});if(!r.ok)throw Error((await r.json()).error||r.status);$('test-state').textContent='Starting…';}catch(e){$('test-detail').textContent='Could not start test: '+e.message;}finally{busy=false;}};
@@ -319,5 +319,39 @@ function renderCalib(s){
   $('calib-yaml').textContent='calibration: ['+flat.join(', ')+']';
  }else{
   $('calib-yaml').textContent=pts.length?'need at least 3 points':'';
+ }
+}
+
+/* --- Gripper travel --------------------------------------------------------
+   Captures where the gripper actually is, rather than trusting a guessed
+   open/closed pair. */
+async function gripAction(which){
+ try{
+  const r=await fetch('/api/gripper/'+which,{method:'POST',
+   headers:{'X-Arm-Dashboard':'1'},signal:AbortSignal.timeout(6000)});
+  const j=await r.json();
+  $('grip-reply').textContent=r.ok?`open ${j.open ?? '—'}°, closed ${j.closed ?? '—'}°`
+                                  :('failed: '+(j.error||r.status));
+ }catch(e){$('grip-reply').textContent='failed: '+e.message;}
+}
+$('grip-open').onclick=()=>gripAction('open');
+$('grip-closed').onclick=()=>gripAction('closed');
+
+function renderGripper(s){
+ const g=s.gripper||{}, on=Boolean(s.control);
+ $('grip-open').disabled=!on; $('grip-closed').disabled=!on;
+ const now=s.jog_pose?Math.round(s.jog_pose[g.joint??3]):null;
+ if(!on){$('grip-reply').textContent='control disabled';}
+ else if(g.open!=null||g.closed!=null){
+  $('grip-reply').textContent=`open ${g.open??'—'}°, closed ${g.closed??'—'}°`
+   +(now!=null?`  (now ${now}°)`:'');
+ }else{
+  $('grip-reply').textContent=now!=null?`gripper now ${now}° — nothing captured yet`:'';
+ }
+ // Only append the gripper lines once both ends are known.
+ const pre=$('calib-yaml');
+ if(g.open!=null&&g.closed!=null&&pre.textContent.startsWith('calibration:')){
+  if(!pre.textContent.includes('gripper_open'))
+   pre.textContent+=`\ngripper_open: ${g.open}\ngripper_closed: ${g.closed}`;
  }
 }

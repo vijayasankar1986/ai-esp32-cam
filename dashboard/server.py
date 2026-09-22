@@ -166,6 +166,7 @@ def status():
     if not target_time or now - target_time > 3:
         data['target'] = None
     data['calibration'] = list(CALIB['points'])
+    data['gripper'] = dict(GRIPPER)
     joint_time = data.pop('last_joints')
     if not joint_time or now - joint_time > 3:
         data['joints'] = None
@@ -373,6 +374,21 @@ class Handler(BaseHTTPRequestHandler):
         self.save_calibration()
         return self.respond(200, {'points': CALIB['points']})
 
+    def handle_gripper(self, which):
+        """Record the current gripper angle as the open or closed position.
+
+        Taken from where the operator has actually jogged it, so the value
+        reflects this mechanism and this object rather than a guess.
+        """
+        if not CONTROL:
+            return self.respond(403, {'error': 'Control disabled'})
+        joint = int(GRIPPER['joint'])
+        angle = int(round(JOG['pose'][joint]))
+        GRIPPER[which] = angle
+        self.save_calibration()
+        return self.respond(200, {'open': GRIPPER['open'],
+                                  'closed': GRIPPER['closed']})
+
     def save_calibration(self):
         """Persist points, and emit the YAML line to paste into poc.yaml."""
         flat = []
@@ -381,6 +397,8 @@ class Handler(BaseHTTPRequestHandler):
         try:
             CALIB_FILE.write_text(json.dumps(
                 {'points': CALIB['points'],
+                 'gripper_open': GRIPPER['open'],
+                 'gripper_closed': GRIPPER['closed'],
                  'calibration_yaml': 'calibration: [' +
                                      ', '.join(str(v) for v in flat) + ']'}, indent=2))
         except OSError:
