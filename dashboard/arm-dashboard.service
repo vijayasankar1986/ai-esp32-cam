@@ -1,0 +1,16 @@
+[Unit]
+Description=Robotic arm project status dashboard
+After=network.target
+
+[Service]
+Type=simple
+User=bbt
+WorkingDirectory=/home/bbt/ai-esp32cam
+ExecStart=/bin/bash /home/bbt/ai-esp32cam/dashboard/start.sh
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

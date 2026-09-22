@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Arm Lab · Raspberry Pi</title><link rel="icon" href="/favicon.svg"><link rel="stylesheet" href="/style.css"><script src="/app.js" defer></script></head>
+<body><main>
+<header><a class="brand" href="/"><span class="brandmark">⌁</span> ARM LAB <span class="version">01</span></a><span id="connection" class="pill">Connecting to Pi…</span></header>
+<section class="heading"><div><p class="eyebrow">RASPBERRY PI / VISION + MOTION</p><h1>See what’s working.</h1><p class="intro">Camera, ROS 2 and your four-servo arm—in one place.</p></div><div class="mode"><span class="dot amber"></span> Observe & test<span>No motor controls</span></div></section>
+<div id="offline" class="notice" hidden>Connection to the Pi was lost. Values below may be out of date. Retrying…</div>
+<section class="cards" aria-label="System status">
+<article><p class="label">01 / ROS 2</p><h2 id="ros">Checking…</h2><p id="ros-detail">Connecting to the local observer</p></article>
+<article><p class="label">02 / CAMERA</p><h2 id="camera">Checking…</h2><p id="camera-detail">Waiting for image messages</p></article>
+<article><p class="label">03 / USB DEVICES</p><h2 id="usb">Checking…</h2><p>Serial adapters detected on the Pi</p></article>
+<article><p class="label">04 / ARM</p><h2 class="amber-text">Not verified</h2><p>Controller identity and servo calibration pending</p></article>
+</section>
+<section class="workspace">
+<article class="panel camera-panel"><div class="panel-head"><h2>Vision monitor</h2><div class="tabs" aria-label="Image source"><button id="live-tab" class="selected" aria-pressed="true">Live camera</button><button id="test-tab" aria-pressed="false">Test images</button></div></div>
+<div class="viewer"><img id="frame" alt="Camera image" hidden><div id="empty"><div class="camera-icon">◎</div><h3>Waiting for the camera</h3><p>The camera’s Wi-Fi connection still needs setup.<br>USB is currently providing a serial connection.</p></div><span id="image-label" class="image-label">LIVE SOURCE · NO FRAMES</span></div>
+<div class="viewer-footer"><span id="frame-detail">/camera/image_raw</span><span id="detection">Detection —</span></div></article>
+<article class="panel test-panel"><p class="eyebrow">SOFTWARE CHECK</p><h2>Run the complete dry run.</h2><p>Generated images travel through the ROS node. We check detection, preset sequencing and camera-loss handling.</p><button id="run-test" class="primary">Run system test <span>↗</span></button><p class="small">Uses generated images in an isolated ROS domain. Never opens a USB serial port.</p>
+<div class="test-result" aria-live="polite"><span id="test-state" class="pill">Not run this session</span><p id="test-detail">Run a test to see current results.</p></div>
+<ol class="checklist"><li>Image messages published</li><li>Red detected & preset sequence run</li><li>Removal rearms detection</li><li>Lost camera triggers a fault</li></ol>
+</article></section>
+<section class="bottom"><article class="panel"><div class="panel-head"><h2>Raspberry Pi</h2><span class="small" id="host">—</span></div><p id="model">Checking model…</p><div class="metrics"><div><span>Temperature</span><strong id="temp">—</strong></div><div><span>Disk free</span><strong id="disk">—</strong></div><div><span>Uptime</span><strong id="uptime">—</strong></div></div><h3 class="devices-title">Connected serial adapters</h3><ul id="devices" class="devices"></ul></article>
+<article class="panel"><div class="panel-head"><h2>Test output</h2><span class="small">Latest run</span></div><pre id="output">No test has been run since the dashboard started.</pre></article></section>
+<footer><span>ARM LAB / Hiwonder + ESP32 + ROS 2</span><span id="updated">Waiting for status</span></footer>
+</main></body></html>
