@@ -22,7 +22,8 @@ arm_poc:
     # to keep the original single fixed trigger_pose behaviour.
     calibration: []
     stable_frames: 3
-    hold_seconds: 3.0
+    hold_seconds: 6.0 # Firmware steps one joint at a time on USB power, so a
+                      # four-joint move takes about four times longer to finish
     camera_stale_seconds: 8.0 # Must exceed the camera's slowest frame interval
     connect_timeout: 5.0
     read_timeout: 10.0 # A VGA frame takes about a second to encode; leave room

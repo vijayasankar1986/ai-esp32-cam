@@ -11,6 +11,14 @@ const bool CALIBRATED = false; // See docs/HARDWARE.md before enabling.
 const int PINS[4] = {27, 26, 25, 33};
 const int MIN_ANGLE[4] = {80, 80, 80, 80};
 const int MAX_ANGLE[4] = {100, 100, 100, 100};
+// Move one joint at a time. Four SG90s stall at roughly 650-750 mA each, so
+// driving them together can pull well past what a USB port supplies; the rail
+// sags, the ESP32 browns out mid-motion and the arm drops. Stepping one joint
+// at a time keeps the moving current to a single servo plus three holding.
+// This makes a four-joint move about four times slower, so raise hold_seconds
+// in poc.yaml to suit. Set false only with a separate servo supply fitted.
+const bool SEQUENTIAL_MOTION = true;
+const int STEP_MS = 20;        // Milliseconds per one-degree step.
 const int PULSE_MIN_US = 1000; // Verify your actual servo specifications.
 const int PULSE_MAX_US = 2000;
 int currentAngle[4] = {90, 90, 90, 90};
@@ -89,12 +97,13 @@ void loop() {
   }
   unsigned long now = millis();
   if (active && now - lastMove > 2000) stopServos();
-  if (active && now - lastStep >= 20) {
+  if (active && now - lastStep >= STEP_MS) {
     lastStep = now;
     for (int i = 0; i < 4; ++i) {
-      if (currentAngle[i] < targetAngle[i]) ++currentAngle[i];
-      else if (currentAngle[i] > targetAngle[i]) --currentAngle[i];
+      if (currentAngle[i] == targetAngle[i]) continue;
+      currentAngle[i] += (currentAngle[i] < targetAngle[i]) ? 1 : -1;
       writeAngle(i);
+      if (SEQUENTIAL_MOTION) break;   // Only one servo draws moving current.
     }
   }
 }

@@ -12,18 +12,16 @@ Read from the actual wiring on 2026-09-22. The controller is an
 **ESP32-D0WDQ6** (classic ESP32, 4 MB flash, MAC `fc:e8:c0:e1:dd:00`), not an
 S3. All four pins are LEDC-capable outputs and none is a boot strapping pin.
 
-| Logical joint | ESP32 GPIO | Assumed mechanism | Confirmed? |
+| Logical joint | ESP32 GPIO | Mechanism | Confirmed |
 |---|---|---|---|
-| 0 | 27 (D27) | base rotation | no |
-| 1 | 26 (D26) | shoulder | no |
-| 2 | 25 (D25) | elbow | no |
-| 3 | 33 (D33) | gripper / wrist | no |
+| 0 | 27 (D27) | base rotation | yes |
+| 1 | 26 (D26) | shoulder | yes |
+| 2 | 25 (D25) | elbow | yes |
+| 3 | 33 (D33) | gripper / wrist | yes |
 
-The **pins are known; the order is not**. Which GPIO drives which joint was not
-recorded, so the mapping above is an assumption taken from the order the pins
-were reported. Confirm it during calibration by commanding one joint at a time
-and writing down which one actually moves, then correct the table. Getting this
-wrong means a pose intended for the shoulder is sent to the gripper.
+Confirmed by the builder on 2026-09-22. Still worth re-checking on the first
+powered move, one joint at a time: a wrong mapping sends a shoulder pose to the
+gripper, and the gripper has the least travel to spare.
 
 Servos are blue SG90-class 9 g units from the KitKraft 3D-printed kit, so the
 1000-2000 us pulse range in the firmware is the right starting point. Their
@@ -31,6 +29,31 @@ usable travel is limited by the mechanism, not the servo, which is what
 `MIN_ANGLE` and `MAX_ANGLE` are for.
 
 Each servo has ground, supply, and signal; verify its wire colours against the servo documentation. Camera remains a separate device on Wi-Fi. Use a data-capable USB cable between Pi and controller.
+
+## Servo power on this build
+
+The servos on this build are fed from **USB**, not a separate supply. That is
+not the recommended arrangement above, so be clear about what it costs.
+
+Four SG90s stall at roughly 650-750 mA each, around 2.5-3 A together. A USB
+port supplies 500 mA, or up to about 1.5 A from a charging port. Commanding all
+four joints at once therefore risks sagging the 5 V rail until the ESP32 hits
+its brownout threshold and resets. The arm drops at the same moment the
+controller reboots, which is the worst combination available.
+
+The firmware mitigates this with `SEQUENTIAL_MOTION`, which steps **one joint
+at a time**, so moving current is a single servo plus three holding rather than
+four moving together. Holding current is also bounded: PWM is detached after
+two seconds without an accepted `MOVE`, which releases torque entirely.
+
+This reduces the risk; it does not remove it. A single SG90 can still stall
+above what a weak port delivers, particularly lifting against gravity. If the
+controller reboots mid-motion, or joints twitch when another starts moving,
+that is the rail sagging and the answer is a separate supply, not more tuning.
+
+Because motion is now sequential, a four-joint move takes about four times
+longer. Raise `hold_seconds` in `poc.yaml` so a preset completes before the
+node commands the return.
 
 ## Calibration workflow
 
