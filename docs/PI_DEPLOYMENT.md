@@ -23,16 +23,46 @@ wsl.exe -d Ubuntu-22.04 -- ssh bbt@192.168.1.9
 
 The WSL distribution is the SSH client. ROS runs on the Pi's Ubuntu 24.04, not in the Ubuntu 22.04 WSL client.
 
-Two adapters were visible; neither has been identified as the servo controller:
+## Board identification
 
-- `/dev/serial/by-id/usb-1a86_USB_Serial-if00-port0`
-- `/dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0`
+Both USB boards were identified on 2026-09-22 by reading boot output over
+serial with servo power switched off. No firmware was flashed.
+
+| Port | USB bridge | Board | Evidence |
+|---|---|---|---|
+| `usb-1a86_USB_Serial-if00-port0` (`ttyUSB0`) | CH340 `1a86:7523` | **Hiwonder camera** | Prints `WiFi AP Started` / `AP IP Address: 192.168.5.1` at boot; ignores `PING` and `STOP` |
+| `usb-Silicon_Labs_CP2102_..._0001-if00-port0` (`ttyUSB1`) | CP2102 `10c4:ea60` | **Servo controller** (by elimination) | Not yet confirmed by reply; see the disconnect note below |
+
+Use the CP2102 path for `serial_port` in `poc.yaml`, and confirm it replies
+`READY` to `PING` before enabling hardware mode.
+
+The camera exposes no serial configuration interface. It is silent to a bare
+newline and to `help`, `AT`, `?` and `status`, so its Wi-Fi mode can only be
+changed through its own web page at `192.168.5.1`. USB carries power and
+programming only; video is Wi-Fi.
+
+`bbt` was added to the `dialout` group so serial access no longer needs sudo.
+This takes effect at the next login.
+
+### Controller disconnect
+
+The CP2102 board dropped off the USB bus 78 minutes into the 2026-09-22
+session and did not re-enumerate:
+
+```text
+usb 1-1.2: USB disconnect, device number 4
+cp210x ttyUSB1: cp210x converter now disconnected from ttyUSB1
+```
+
+Check that cable and its power before relying on the controller. A controller
+that vanishes mid-run causes the ROS node to latch a fault, which is the
+intended behaviour but is not a substitute for a reliable connection.
 
 USB enumeration showed serial adapters, not a USB webcam. Existing `/dev/video*` devices were the Pi's internal codec/ISP interfaces; they are not evidence of an ESP32 video feed. USB powers/programs these boards; the configured camera bridge still requires a network JPEG/MJPEG feed.
 
 ## Camera network finding
 
-The Pi detected the nearby hotspot `HW_ESP32S3CAM_88`, likely the Hiwonder camera. Its identity has not been physically confirmed. Hiwonder documents AP viewing at `192.168.5.1` after joining the camera hotspot; this address is not reachable merely because USB is connected.
+The Pi detects `HW_ESP32S3CAM_88` at full signal, and the camera's own serial boot output confirms it is the source: the board reports `WiFi AP Started` at `192.168.5.1`. The camera therefore ships with working firmware and needs no flashing; only its network mode is in question. Hiwonder documents AP viewing at `192.168.5.1` after joining the camera hotspot; this address is not reachable merely because USB is connected.
 
 The Pi currently uses `wlan0` for `192.168.1.9`; Ethernet is disconnected and the user has no Ethernet available. Switching that Wi-Fi interface would interrupt SSH. Its network configuration has therefore been preserved. Live integration needs either camera station-mode configuration for the existing LAN or a second Wi-Fi adapter on the Pi. The factory station-mode example uses a particular hotspot name/password; it does not establish that arbitrary router credentials can be set through the web page. Inspect the exact firmware before changing it.
 
