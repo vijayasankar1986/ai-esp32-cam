@@ -36,12 +36,17 @@
 #define MDNS_NAME  "armcam" // Reachable as armcam.local where mDNS is supported.
 #define JPEG_QUALITY 80     // Software encoder, 0-100. Higher costs CPU and bandwidth.
 // Frame size. The GC2145 has no hardware JPEG, so every frame is encoded in
-// software and larger sizes cost frame rate rather than just bandwidth.
-// QVGA 320x240 is smooth; VGA 640x480 is a good compromise; SVGA and above
-// drop to a few frames per second. Colour detection works on the fraction of
-// matching pixels, so it gains nothing from extra resolution -- raise this
-// for a nicer picture on the dashboard, not for better detection.
-#define FRAME_SIZE FRAMESIZE_VGA
+// software on the ESP32 and the cost scales with pixel count. Measured on this
+// board over /capture:
+//
+//   FRAMESIZE_QVGA  320x240   7.0 fps    8 KB/frame   usable video
+//   FRAMESIZE_VGA   640x480   0.9 fps   23 KB/frame   effectively a slideshow
+//
+// QVGA is the only setting that streams smoothly. CIF (400x296) is untested
+// middle ground. Colour detection measures the fraction of matching pixels, so
+// it gains nothing from resolution: raise this only if you want a bigger
+// picture and can live with the frame rate.
+#define FRAME_SIZE FRAMESIZE_QVGA
 
 struct PinMap {
   const char *name;

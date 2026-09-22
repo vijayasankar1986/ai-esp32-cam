@@ -62,6 +62,17 @@ The camera is therefore opened in RGB565 and frames are encoded with
 visible. Software encoding costs CPU, so frame rate is lower than an OV2640
 board would give; QVGA is comfortable, larger sizes less so.
 
+Measured cost of that, over `/capture` on this board:
+
+| `FRAME_SIZE` | Resolution | Rate | Size | Verdict |
+|---|---|---|---|---|
+| `FRAMESIZE_QVGA` | 320x240 | 7.0 fps | 8 KB | smooth; the default |
+| `FRAMESIZE_VGA` | 640x480 | 0.9 fps | 23 KB | a slideshow |
+
+Roughly a second per frame at VGA, essentially all of it encoding. Detection is
+unaffected either way, because it works on the fraction of matching pixels
+rather than on detail, so resolution buys a nicer picture and nothing else.
+
 `PIN_FORCE` is set to 0 to use the known-good map directly. Set it to -1 to
 probe all candidates again, which is what you want on a different board.
 
