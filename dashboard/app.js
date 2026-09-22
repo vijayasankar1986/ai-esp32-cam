@@ -20,7 +20,7 @@ function renderFrame(){
  $('detection').textContent=detected===null||detected===undefined?'Detection —':detected?'Colour detected':'No colour detected';
 }
 function render(s){current=s;$('connection').textContent='Pi connected';$('connection').className='pill ok';$('offline').hidden=true;
- $('ros').textContent=s.ros?'Observer online':'Unavailable';$('ros').style.color=s.ros?'var(--mint)':'var(--amber)';$('ros-detail').textContent=s.ros?`${s.ros_distro} · domain ${s.ros_domain} · ${s.publishers} image publishers`:s.ros_error;
+ $('ros').textContent=s.ros?'Observer online':'Unavailable';$('ros').style.color=s.ros?'var(--mint)':'var(--amber)';$('ros-detail').textContent=s.ros?(s.arm_node?`${s.ros_distro} · domain ${s.ros_domain} · arm_poc connected`:`${s.ros_distro} · domain ${s.ros_domain} · arm_poc NOT running`):s.ros_error;
  $('camera').textContent=s.camera_live?'Receiving frames':s.frame_age!==null?'Feed stale':'Not connected';$('camera').style.color=s.camera_live?'var(--mint)':'var(--amber)';$('camera-detail').textContent=s.camera_live?'Live images arriving through ROS 2':s.frame_age!==null?`No frames for ${s.frame_age}s — the node latches a fault on a stale feed and must be restarted`:'Camera not connected yet';
  $('usb').textContent=`${s.usb.length} connected`;$('host').textContent=s.host;$('model').textContent=s.model;$('temp').textContent=s.temperature===null?'—':s.temperature+' °C';$('disk').textContent=s.disk_free_gb+' GB';
  const h=Math.floor(s.uptime_seconds/3600);$('uptime').textContent=h>=24?Math.floor(h/24)+'d '+h%24+'h':h+'h '+Math.floor(s.uptime_seconds%3600/60)+'m';

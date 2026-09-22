@@ -257,11 +257,11 @@ class ArmPOC(Node):
             if not self.fault:
                 self.halt('Camera feed stale: ' + (error or 'no frames received'))
             return
-        if self.fault:
+        if self.fault and self.fault_kind == 'camera':
             # Only camera faults clear themselves. A controller that stopped
             # answering will not start again because frames resumed, and
             # retrying it every tick just floods the log.
-            if not self.p['auto_recover'] or self.fault_kind != 'camera':
+            if not self.p['auto_recover']:
                 return
             # Frames are flowing again. Resume from home with a fresh gate, so a
             # recovery can never continue a motion that was interrupted midway.
@@ -293,7 +293,7 @@ class ArmPOC(Node):
                 point.point.x, point.point.y, point.point.z = u, v, fraction
                 self.target.publish(point)
             event = self.gate.update(seen)
-            if event and self.phase == 'idle':
+            if event and self.phase == 'idle' and not self.fault:
                 if self.model:
                     self.pose = pose_from_pixel(self.model, u, v,
                                                 self.p['min_angles'], self.p['max_angles'])
@@ -307,7 +307,7 @@ class ArmPOC(Node):
                 self.phase = 'target'
                 self.deadline = now + self.p['hold_seconds']
                 self.last_sent = 0.0
-        if self.phase != 'idle' and now >= self.deadline:
+        if self.phase != 'idle' and now >= self.deadline and not self.fault:
             if self.phase == 'manual':
                 # The jog stopped refreshing. Go home rather than hold a pose
                 # nobody is watching any more.
@@ -331,7 +331,9 @@ class ArmPOC(Node):
         state.name = ['joint0', 'joint1', 'joint2', 'joint3']
         state.position = [math.radians(a) for a in self.pose]
         self.joints.publish(state)
-        if now - self.last_sent >= 0.5:
+        # A faulted controller stops receiving commands, but images, detection
+        # and joint states keep publishing so the dashboard stays useful.
+        if not self.fault and now - self.last_sent >= 0.5:
             try:
                 if self.port:
                     self.exchange(self.command, b'OK')

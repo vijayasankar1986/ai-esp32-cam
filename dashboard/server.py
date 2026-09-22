@@ -39,7 +39,7 @@ LOCK = threading.Lock()
 FRAME_READY = threading.Condition()
 STATE = {'ros': False, 'ros_error': '', 'image_count': 0, 'last_image': 0,
          'last_detection': 0, 'red': None, 'publishers': 0, 'jpeg': None,
-         'joints': None, 'last_joints': 0,
+         'joints': None, 'last_joints': 0, 'arm_node': False,
          'test': {'status': 'not_run', 'output': '', 'finished': None}}
 
 
@@ -95,6 +95,12 @@ def ros_observer():
         if CONTROL:
             JOG['publisher'] = node.create_publisher(JointState, '/arm/manual_pose', 10)
         node.create_subscription(Bool, '/vision/color_detected', on_detection, 10)
+
+        def graph_arm():
+            with LOCK:
+                STATE['arm_node'] = node.count_publishers('/arm/joint_states') > 0
+
+        node.create_timer(2.0, graph_arm)
 
         def graph():
             with LOCK:
