@@ -2,7 +2,11 @@
 #include <Arduino.h>
 #include <math.h>
 
-const bool CALIBRATED = false; // See docs/HARDWARE.md before enabling.
+// ENABLED 2026-09-22 at the operator's request. The controller will now
+// drive the servos. Limits below are still the conservative 80-100
+// placeholder, not measured travel: find the real range with tools/jog.py
+// and widen these only after seeing each joint move. Set false to disarm.
+const bool CALIBRATED = true;
 // Measured from the wiring on 2026-09-22, not an example: D27, D26, D25, D33.
 // All four are LEDC-capable outputs on the classic ESP32 and none is a boot
 // strapping pin. Joint order below is assumed to be base, shoulder, elbow,

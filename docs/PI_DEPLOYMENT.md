@@ -60,11 +60,20 @@ STOP                   -> STOPPED
 The handshake, the malformed-input rejection and the PWM teardown all work, and
 the board refuses movement exactly as intended while `CALIBRATED` is false.
 
-Note what this does **not** prove. Because the calibration check runs before the
-range check, an out-of-range angle returns `ERR calibration required` rather
-than `ERR limits`, so joint-limit enforcement on real hardware is still
-untested. Nothing has driven a servo. Upload used 115200; this CP2102 fails
-above that, as it did on the flash read.
+`CALIBRATED` was set true on 2026-09-22 at the operator's request, which armed
+the controller. Joint-limit enforcement is now verified, and could be tested
+without moving anything because a rejected `MOVE` never reaches `enableServos`:
+
+```text
+MOVE 200 90 90 90      -> ERR limits    above MAX_ANGLE
+MOVE 79 90 90 90       -> ERR limits    below MIN_ANGLE
+MOVE 90 90 90          -> ERR format
+```
+
+Still untested: any accepted `MOVE`. No servo has been driven, no PWM has been
+attached, and the 80-100 limits remain a conservative placeholder rather than
+measured travel. Upload used 115200; this CP2102 fails above that, as it did on
+the flash read.
 
 ### Controller firmware as found
 
