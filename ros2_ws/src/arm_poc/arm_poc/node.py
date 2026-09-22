@@ -129,6 +129,15 @@ class ArmPOC(Node):
                 raise
         self.camera = CameraReader(self.p['camera_url'], self.p['connect_timeout'],
                                    self.p['read_timeout'])
+        # Serial runs on its own thread. A blocked write must never stall the
+        # timer callback: a 1 s timeout plus a retry was starving image
+        # publishing whenever the controller struggled, so a power problem on
+        # the arm blanked the camera too.
+        self.writer_stop = threading.Event()
+        self.writer = None
+        if self.port:
+            self.writer = threading.Thread(target=self.write_loop, daemon=True)
+            self.writer.start()
         self.started = time.monotonic()
         self.timer = self.create_timer(0.1, self.tick)
         self.get_logger().info(
@@ -194,6 +203,19 @@ class ArmPOC(Node):
         cx, cy = centroids[index]
         height, width = mask.shape[:2]
         return area / mask.size, cx / width, cy / height
+
+    def write_loop(self):
+        """Send the current command to the controller, off the callback thread."""
+        while not self.writer_stop.is_set():
+            if self.fault:
+                self.writer_stop.wait(0.5)
+                continue
+            command = self.command
+            try:
+                self.exchange(command, b'OK')
+            except Exception as exc:
+                self.halt(str(exc), kind='controller')
+            self.writer_stop.wait(0.4)
 
     def drain(self, quiet=0.3, limit=4.0):
         """Read until the controller has gone quiet.
@@ -345,17 +367,13 @@ class ArmPOC(Node):
         state.name = ['joint0', 'joint1', 'joint2', 'joint3']
         state.position = [math.radians(a) for a in self.pose]
         self.joints.publish(state)
-        # A faulted controller stops receiving commands, but images, detection
-        # and joint states keep publishing so the dashboard stays useful.
-        if not self.fault and now - self.last_sent >= 0.5:
-            try:
-                if self.port:
-                    self.exchange(self.command, b'OK')
-                self.last_sent = now
-            except Exception as exc:
-                self.halt(str(exc), kind='controller')
+        # Commanding happens on the writer thread; nothing here blocks on
+        # serial, so images and joint states keep flowing regardless.
 
     def close(self):
+        self.writer_stop.set()
+        if self.writer:
+            self.writer.join(timeout=1.5)
         if self.camera:
             self.camera.stop.set()
             self.camera.thread.join(timeout=0.5)
