@@ -192,6 +192,36 @@ class ArmPOC(Node):
         height, width = mask.shape[:2]
         return area / mask.size, cx / width, cy / height
 
+    def drain(self, quiet=0.3, limit=4.0):
+        """Read until the controller has gone quiet.
+
+        Opening the port resets the ESP32, whose boot ROM chatters at 74880
+        baud. At 115200 that arrives as junk, the firmware rejects the long
+        line with 'ERR line too long', and that queued reply then sits one
+        ahead of every later command, so PING reads the junk reply and MOVE
+        reads READY. A fixed sleep is not enough because junk keeps arriving
+        after the flush; draining to silence keeps replies aligned.
+        """
+        deadline = time.monotonic() + limit
+        last_data = time.monotonic()
+        while time.monotonic() < deadline:
+            if self.port.read(256):
+                last_data = time.monotonic()
+            elif time.monotonic() - last_data >= quiet:
+                return
+
+    def handshake(self, attempts=3):
+        for attempt in range(attempts):
+            self.drain()
+            self.port.reset_input_buffer()
+            self.port.write(b'PING\n')
+            reply = self.port.readline().strip()
+            if reply == b'READY':
+                return
+            self.get_logger().warn(
+                f'Handshake attempt {attempt + 1}: got {reply!r}, expected READY')
+        raise RuntimeError('Controller never answered PING with READY')
+
     def exchange(self, command, expected):
         self.port.write(command)
         reply = self.port.readline().strip()
