@@ -145,16 +145,19 @@ static esp_err_t streamHandler(httpd_req_t *req) {
   return res;
 }
 
-static void startServers() {
+// cameraReady false still serves /status, so a board whose sensor did not come
+// up is reachable over the network for diagnosis instead of silently dead.
+static void startServers(bool cameraReady) {
   httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
   cfg.server_port = 80;
   cfg.ctrl_port = 32768;
   httpd_uri_t capture = {"/capture", HTTP_GET, captureHandler, NULL};
   httpd_uri_t status = {"/status", HTTP_GET, statusHandler, NULL};
   if (httpd_start(&control_server, &cfg) == ESP_OK) {
-    httpd_register_uri_handler(control_server, &capture);
     httpd_register_uri_handler(control_server, &status);
+    if (cameraReady) httpd_register_uri_handler(control_server, &capture);
   }
+  if (!cameraReady) return;
   // Separate instance on 81 so a long-lived stream cannot block /capture.
   cfg.server_port = 81;
   cfg.ctrl_port = 32769;
@@ -164,18 +167,7 @@ static void startServers() {
   }
 }
 
-void setup() {
-  Serial.begin(115200);
-  delay(300);
-  Serial.println("\nArm camera: station mode");
-  Serial.printf("PSRAM: %s\n", psramFound() ? "yes" : "NO (frame sizes limited)");
-
-  if (!startCamera()) {
-    Serial.println("FATAL: no candidate pin map produced a frame.");
-    Serial.println("Add this board's mapping to CANDIDATES, or restore the backup.");
-    while (true) delay(1000);
-  }
-
+static bool connectWifi() {
   WiFi.persistent(false);
   WiFi.mode(WIFI_STA);
   WiFi.setSleep(false);          // Sleep adds latency and stalls MJPEG.
@@ -192,28 +184,63 @@ void setup() {
     Serial.print('.');
   }
   if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("\nWi-Fi failed; restarting");
-    delay(1500);
-    ESP.restart();
+    Serial.printf("\nWi-Fi FAILED (status %d). Check SSID and password in secrets.h.\n",
+                  (int)WiFi.status());
+    return false;
   }
-  Serial.printf("\nConnected. IP %s  RSSI %d\n",
-                WiFi.localIP().toString().c_str(), (int)WiFi.RSSI());
-  Serial.printf("Stream  http://%s:81/stream\n", WiFi.localIP().toString().c_str());
-  Serial.printf("Still   http://%s/capture\n", WiFi.localIP().toString().c_str());
+  Serial.printf("\nIP address: %s\n", WiFi.localIP().toString().c_str());
+  Serial.printf("Gateway:    %s   RSSI %d\n",
+                WiFi.gatewayIP().toString().c_str(), (int)WiFi.RSSI());
+  return true;
+}
 
-  if (MDNS.begin(MDNS_NAME)) {
-    MDNS.addService("http", "tcp", 80);
-    Serial.printf("Also http://%s.local:81/stream\n", MDNS_NAME);
+void setup() {
+  Serial.begin(115200);
+  delay(300);
+  Serial.println("\nArm camera: station mode");
+  Serial.printf("PSRAM: %s\n", psramFound() ? "yes" : "NO (enable OPI PSRAM in Tools)");
+
+  // Wi-Fi first, so the address is reported even when the sensor does not come
+  // up. A camera fault should not also cost us network access to the board.
+  bool online = connectWifi();
+
+  bool cameraReady = startCamera();
+  if (!cameraReady) {
+    Serial.println("\nCamera not detected: no candidate pin map produced a frame.");
+    Serial.println("Run firmware/camera_pin_finder to measure this board's pins.");
+    Serial.println("Wi-Fi and /status stay up so the board is still reachable.");
   }
-  startServers();
+
+  if (online) {
+    String ip = WiFi.localIP().toString();
+    if (cameraReady) {
+      Serial.printf("Stream  http://%s:81/stream\n", ip.c_str());
+      Serial.printf("Still   http://%s/capture\n", ip.c_str());
+    }
+    Serial.printf("Status  http://%s/status\n", ip.c_str());
+    if (MDNS.begin(MDNS_NAME)) {
+      MDNS.addService("http", "tcp", 80);
+      Serial.printf("Also    http://%s.local/status\n", MDNS_NAME);
+    }
+    startServers(cameraReady);
+  }
 }
 
 void loop() {
-  // Reboot on a dropped link so the camera reappears without intervention.
-  if (WiFi.status() != WL_CONNECTED) {
+  // Reboot on a link that was up and dropped, so the camera reappears without
+  // intervention. A link that never came up means bad credentials, and
+  // restarting on those would just spin, so report once and sit still.
+  static bool everConnected = false;
+  static bool reported = false;
+  if (WiFi.status() == WL_CONNECTED) {
+    everConnected = true;
+  } else if (everConnected) {
     Serial.println("Wi-Fi lost; restarting");
     delay(1000);
     ESP.restart();
+  } else if (!reported) {
+    reported = true;
+    Serial.println("Never connected. Fix secrets.h and re-upload.");
   }
   delay(2000);
 }
