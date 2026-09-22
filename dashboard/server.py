@@ -17,6 +17,9 @@ ROOT = Path(__file__).resolve().parents[1]
 ASSETS = Path(__file__).resolve().parent
 RUNTIME = Path(tempfile.mkdtemp(prefix='arm-dashboard-'))
 LOCK = threading.Lock()
+# Signals waiting MJPEG clients that a new frame landed, so the stream is
+# driven by arrivals rather than polling.
+FRAME_READY = threading.Condition()
 STATE = {'ros': False, 'ros_error': '', 'image_count': 0, 'last_image': 0,
          'last_detection': 0, 'red': None, 'publishers': 0, 'jpeg': None,
          'joints': None, 'last_joints': 0,
@@ -54,6 +57,8 @@ def ros_observer():
                         STATE['jpeg'] = encoded.tobytes()
                         STATE['image_count'] += 1
                         STATE['last_image'] = time.monotonic()
+                with FRAME_READY:
+                    FRAME_READY.notify_all()
             except Exception as exc:
                 with LOCK:
                     STATE['ros_error'] = str(exc)
@@ -163,6 +168,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.respond(200, (ASSETS / name).read_bytes(), mime)
         if path == '/api/status':
             return self.respond(200, status())
+        if path == '/api/stream':
+            return self.stream_frames()
         if path == '/api/frame':
             with LOCK:
                 jpeg = STATE['jpeg']
@@ -173,6 +180,32 @@ class Handler(BaseHTTPRequestHandler):
             except OSError:
                 return self.respond(404, {'error': 'No test image yet'})
         self.respond(404, {'error': 'Not found'})
+
+    def stream_frames(self):
+        """multipart/x-mixed-replace, the same shape the camera itself serves."""
+        boundary = 'armframe'
+        self.send_response(200)
+        self.send_header('Content-Type', 'multipart/x-mixed-replace; boundary=' + boundary)
+        self.send_header('Cache-Control', 'no-store')
+        self.send_header('X-Content-Type-Options', 'nosniff')
+        self.end_headers()
+        sent = -1
+        try:
+            while True:
+                with FRAME_READY:
+                    FRAME_READY.wait(timeout=2.0)
+                with LOCK:
+                    jpeg, count = STATE['jpeg'], STATE['image_count']
+                if jpeg is None or count == sent:
+                    continue        # timed out waiting; loop so we notice a dead client
+                sent = count
+                head = ('--%s\r\nContent-Type: image/jpeg\r\n'
+                        'Content-Length: %d\r\n\r\n' % (boundary, len(jpeg)))
+                self.wfile.write(head.encode('ascii'))
+                self.wfile.write(jpeg)
+                self.wfile.write(b'\r\n')
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+            pass                     # viewer navigated away
 
     def do_POST(self):
         # No CORS; require a custom same-origin request for the bounded test action.

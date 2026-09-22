@@ -52,6 +52,9 @@ class CameraReader:
                                 with self.lock:
                                     self.latest = (time.monotonic(), frame)
                                     self.error = ''
+                with self.lock:
+                    if not self.error:
+                        self.error = 'Feed ended without error (camera rebooted?)'
                 self.stop.wait(0.1)
             except Exception as exc:
                 with self.lock:
@@ -135,7 +138,7 @@ class ArmPOC(Node):
         frame_time = latest[0] if latest else self.started
         if now - frame_time > self.p['camera_stale_seconds']:
             if not self.fault:
-                self.halt('Camera feed stale: ' + error)
+                self.halt('Camera feed stale: ' + (error or 'no frames received'))
             return
         if self.fault:
             return

@@ -5,10 +5,14 @@ function select(next){view=next;for(const key of ['live','test']){const active=k
 $('live-tab').onclick=()=>select('live');$('test-tab').onclick=()=>select('test');
 function renderFrame(){
  if(!current)return;
+ if(view==='test'&&$('frame').src.endsWith('/api/stream'))$('frame').removeAttribute('src');
  const demo=view==='test', t=current.test.telemetry;
  const available=demo ? Boolean(t && t.frames>0) : current.frame_age!==null;
  $('frame').hidden=!available;$('empty').hidden=available;
- if(available){$('frame').src=(demo?'/api/test/frame':'/api/frame')+'?t='+Date.now();$('frame').alt=demo?'Generated test image, not a real camera feed':'Latest ROS camera image';}
+ if(available){const want=demo?'/api/test/frame?t='+Date.now():'/api/stream';
+  // Re-assigning a live MJPEG src would restart the stream every second.
+  if(demo||!$('frame').src.endsWith('/api/stream'))$('frame').src=want;
+  $('frame').alt=demo?'Generated test image, not a real camera feed':'Live ROS camera stream';}
  if(!available){$('empty').querySelector('h3').textContent=demo?'Try the software test':'Waiting for the camera';$('empty').querySelector('p').textContent=demo?'Run the system test to watch generated images pass through ROS 2.':'The camera’s Wi-Fi connection still needs setup. USB is currently providing a serial connection.';}
  $('image-label').textContent=demo?'GENERATED TEST IMAGE · NO PHYSICAL CAMERA':current.camera_live?'LIVE CAMERA':available?'LAST FRAME · FEED STALE':'LIVE SOURCE · NO FRAMES';
  $('frame-detail').textContent=demo?(t?`${t.frames} test frames · ${words[t.phase]||t.phase}`:'Isolated test · ROS domain 87'):`${current.image_count} frames received · /camera/image_raw`;
@@ -17,7 +21,7 @@ function renderFrame(){
 }
 function render(s){current=s;$('connection').textContent='Pi connected';$('connection').className='pill ok';$('offline').hidden=true;
  $('ros').textContent=s.ros?'Observer online':'Unavailable';$('ros').style.color=s.ros?'var(--mint)':'var(--amber)';$('ros-detail').textContent=s.ros?`${s.ros_distro} · domain ${s.ros_domain} · ${s.publishers} image publishers`:s.ros_error;
- $('camera').textContent=s.camera_live?'Receiving frames':s.frame_age!==null?'Feed stale':'Not connected';$('camera').style.color=s.camera_live?'var(--mint)':'var(--amber)';$('camera-detail').textContent=s.camera_live?'Live images arriving through ROS 2':'Camera network setup pending';
+ $('camera').textContent=s.camera_live?'Receiving frames':s.frame_age!==null?'Feed stale':'Not connected';$('camera').style.color=s.camera_live?'var(--mint)':'var(--amber)';$('camera-detail').textContent=s.camera_live?'Live images arriving through ROS 2':s.frame_age!==null?`No frames for ${s.frame_age}s — the node latches a fault on a stale feed and must be restarted`:'Camera not connected yet';
  $('usb').textContent=`${s.usb.length} connected`;$('host').textContent=s.host;$('model').textContent=s.model;$('temp').textContent=s.temperature===null?'—':s.temperature+' °C';$('disk').textContent=s.disk_free_gb+' GB';
  const h=Math.floor(s.uptime_seconds/3600);$('uptime').textContent=h>=24?Math.floor(h/24)+'d '+h%24+'h':h+'h '+Math.floor(s.uptime_seconds%3600/60)+'m';
  $('devices').replaceChildren(...(s.usb.length?s.usb:['No serial adapters detected']).map(name=>{const li=document.createElement('li');li.textContent=name;return li;}));
