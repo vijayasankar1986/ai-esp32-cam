@@ -55,6 +55,28 @@
 #define BRIGHTNESS 1
 #define SATURATION 2
 
+// Flash LED. The AI-Thinker carries a bright white LED on GPIO 4, which none
+// of its camera pins use. Driven by PWM rather than simply switched on: at
+// full power it is dazzling and runs hot enough to matter in an enclosure.
+// 40/255 lifts a dim scene without either problem. Adjust live through
+// /flash?level=0..255.
+#if defined(CONFIG_IDF_TARGET_ESP32)
+#define FLASH_PIN 4
+#else
+#define FLASH_PIN -1        // No known LED on the S3 boards used here.
+#endif
+// 90 from measurement, not taste. Sweeping the LED against a fixed scene:
+//
+//   level    0   40   90  160  255
+//   value  152  142   97   98  103
+//   satur.  38   62   79   84   77
+//
+// Brightness falls as the LED rises, because auto exposure compensates. What
+// improves is saturation, which is what the colour test actually needs: it
+// requires saturation >= 100, and unlit frames sat at 38. 160 is marginally
+// better again but runs hotter for little gain.
+#define FLASH_LEVEL 90
+
 struct PinMap {
   const char *name;
   int8_t pwdn, reset, xclk, sda, scl;
@@ -96,6 +118,7 @@ static httpd_handle_t stream_server = NULL;
 static const PinMap *active_map = NULL;
 static bool native_jpeg = false;        // true if the sensor encodes JPEG itself
 static volatile uint32_t frames_served = 0;
+static int flash_level = 0;
 
 static bool tryPinMap(const PinMap &m, pixformat_t fmt) {
   camera_config_t c = {};
@@ -138,6 +161,23 @@ static bool tryBothFormats(const PinMap &m) {
 // saturation >= 100, so a dark frame fails the test whatever is in front of
 // it. Enabling the automatic controls and lifting saturation is what makes the
 // picture usable for thresholding, not merely visible to a human.
+static void setFlash(int level) {
+  if (FLASH_PIN < 0) return;
+  level = level < 0 ? 0 : (level > 255 ? 255 : level);
+  ledcWrite(FLASH_PIN, level);
+  flash_level = level;
+}
+
+static void startFlash() {
+  if (FLASH_PIN < 0) return;
+  if (!ledcAttach(FLASH_PIN, 5000, 8)) {
+    Serial.println("Flash LED attach failed");
+    return;
+  }
+  setFlash(FLASH_LEVEL);
+  Serial.printf("Flash LED on GPIO %d at %d of 255\n", FLASH_PIN, flash_level);
+}
+
 static void tuneSensor() {
   sensor_t *s = esp_camera_sensor_get();
   if (!s) return;
@@ -158,6 +198,7 @@ static void reportSensor() {
   if (s) Serial.printf("Sensor PID 0x%04x (GC2145 is 0x2145)\n", s->id.PID);
   Serial.printf("JPEG source: %s\n", native_jpeg ? "sensor hardware" : "software encoder");
   tuneSensor();
+  startFlash();
 }
 
 static bool startCamera() {
@@ -216,6 +257,20 @@ static esp_err_t captureHandler(httpd_req_t *req) {
   return r;
 }
 
+static esp_err_t flashHandler(httpd_req_t *req) {
+  char query[48], value[8];
+  if (httpd_req_get_url_query_str(req, query, sizeof(query)) == ESP_OK &&
+      httpd_query_key_value(query, "level", value, sizeof(value)) == ESP_OK) {
+    setFlash(atoi(value));
+  }
+  char body[64];
+  int n = snprintf(body, sizeof(body), "{\"flash\":%d,\"pin\":%d}",
+                   flash_level, FLASH_PIN);
+  httpd_resp_set_type(req, "application/json");
+  httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+  return httpd_resp_send(req, body, n);
+}
+
 static esp_err_t statusHandler(httpd_req_t *req) {
   char buf[384];
   int w = 0, h = 0;
@@ -263,8 +318,10 @@ static void startServers(bool cameraReady) {
   cfg.ctrl_port = 32768;
   httpd_uri_t capture = {"/capture", HTTP_GET, captureHandler, NULL};
   httpd_uri_t status = {"/status", HTTP_GET, statusHandler, NULL};
+  httpd_uri_t flash = {"/flash", HTTP_GET, flashHandler, NULL};
   if (httpd_start(&control_server, &cfg) == ESP_OK) {
     httpd_register_uri_handler(control_server, &status);
+    httpd_register_uri_handler(control_server, &flash);
     if (cameraReady) httpd_register_uri_handler(control_server, &capture);
   }
   if (!cameraReady) return;
