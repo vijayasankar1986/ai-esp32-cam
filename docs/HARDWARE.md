@@ -6,16 +6,29 @@ Use a regulated servo supply at the voltage specified by your actual servos (com
 
 Connect servo supply negative, all servo grounds, and controller ESP32 GND together. Feed servo positive wires from the servo supply. Power the controller over USB from the Pi. Do not connect the external servo positive rail to the ESP32 USB/5 V rail without checking the board's power design. Use a physical switch to cut servo power; software cannot guarantee an emergency stop or prevent an unpowered arm falling.
 
-## Example signal connections
+## Signal connections
 
-These are **classic ESP32 DevKit examples only**. Confirm your board pinout first. Do not use these as Hiwonder camera pin assignments.
+Read from the actual wiring on 2026-09-22. The controller is an
+**ESP32-D0WDQ6** (classic ESP32, 4 MB flash, MAC `fc:e8:c0:e1:dd:00`), not an
+S3. All four pins are LEDC-capable outputs and none is a boot strapping pin.
 
-| Logical joint | ESP32 GPIO example | Actual mechanism |
-|---|---|---|
-| 0 | 18 | Record your joint here |
-| 1 | 19 | Record your joint here |
-| 2 | 21 | Record your joint here |
-| 3 | 22 | Record your joint here |
+| Logical joint | ESP32 GPIO | Assumed mechanism | Confirmed? |
+|---|---|---|---|
+| 0 | 27 (D27) | base rotation | no |
+| 1 | 26 (D26) | shoulder | no |
+| 2 | 25 (D25) | elbow | no |
+| 3 | 33 (D33) | gripper / wrist | no |
+
+The **pins are known; the order is not**. Which GPIO drives which joint was not
+recorded, so the mapping above is an assumption taken from the order the pins
+were reported. Confirm it during calibration by commanding one joint at a time
+and writing down which one actually moves, then correct the table. Getting this
+wrong means a pose intended for the shoulder is sent to the gripper.
+
+Servos are blue SG90-class 9 g units from the KitKraft 3D-printed kit, so the
+1000-2000 us pulse range in the firmware is the right starting point. Their
+usable travel is limited by the mechanism, not the servo, which is what
+`MIN_ANGLE` and `MAX_ANGLE` are for.
 
 Each servo has ground, supply, and signal; verify its wire colours against the servo documentation. Camera remains a separate device on Wi-Fi. Use a data-capable USB cable between Pi and controller.
 

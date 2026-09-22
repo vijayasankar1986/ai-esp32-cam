@@ -3,7 +3,12 @@
 #include <math.h>
 
 const bool CALIBRATED = false; // See docs/HARDWARE.md before enabling.
-const int PINS[4] = {18, 19, 21, 22}; // Classic DevKit EXAMPLES: verify board.
+// Measured from the wiring on 2026-09-22, not an example: D27, D26, D25, D33.
+// All four are LEDC-capable outputs on the classic ESP32 and none is a boot
+// strapping pin. Joint order below is assumed to be base, shoulder, elbow,
+// gripper and must be confirmed during calibration: command one joint at a
+// time and record which physically moves. See docs/HARDWARE.md.
+const int PINS[4] = {27, 26, 25, 33};
 const int MIN_ANGLE[4] = {80, 80, 80, 80};
 const int MAX_ANGLE[4] = {100, 100, 100, 100};
 const int PULSE_MIN_US = 1000; // Verify your actual servo specifications.

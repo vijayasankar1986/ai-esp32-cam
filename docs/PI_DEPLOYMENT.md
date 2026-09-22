@@ -31,7 +31,7 @@ serial with servo power switched off. No firmware was flashed.
 | Port | USB bridge | Board | Evidence |
 |---|---|---|---|
 | `usb-1a86_USB_Serial-if00-port0` (`ttyUSB0`) | CH340 `1a86:7523` | **Hiwonder camera** | Prints `WiFi AP Started` / `AP IP Address: 192.168.5.1` at boot; ignores `PING` and `STOP` |
-| `usb-Silicon_Labs_CP2102_..._0001-if00-port0` (`ttyUSB1`) | CP2102 `10c4:ea60` | **Servo controller** (by elimination) | Not yet confirmed by reply; see the disconnect note below |
+| `usb-Silicon_Labs_CP2102_..._0001-if00-port0` (`ttyUSB1`) | CP2102 `10c4:ea60` | **Servo controller**, confirmed | ESP32-D0WDQ6 rev v1.1, 4 MB flash, MAC `fc:e8:c0:e1:dd:00`. Read over USB on 2026-09-22 |
 
 Use the CP2102 path for `serial_port` in `poc.yaml`, and confirm it replies
 `READY` to `PING` before enabling hardware mode.
@@ -43,6 +43,20 @@ programming only; video is Wi-Fi.
 
 `bbt` was added to the `dialout` group so serial access no longer needs sudo.
 This takes effect at the next login.
+
+### Controller firmware as found
+
+The board did not ship with this project's firmware. It was running a Classic
+Bluetooth SPP sketch advertising as `Robotic_Arm`, built 18 Dec 2025 against
+Arduino ESP32 core 3.3.5 on a different machine, which takes 1- and 2-byte
+values and refers to joints as base, shoulder, elbow and wrist. That is why it
+never answered `PING`: it has never spoken this project's protocol.
+
+A full 4 MB backup was taken before anything was changed, kept outside this
+repository at
+`~/Documents/Arduino/hiwonder-cam-backup/arm_controller_esp32_fce8c0e1dd00_4MB.bin`,
+so the Bluetooth firmware can be restored. It reads only at 115200; the CP2102
+fails at 230400 and above.
 
 ### Controller disconnect
 
