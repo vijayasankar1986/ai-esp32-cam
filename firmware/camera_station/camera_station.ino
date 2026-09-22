@@ -168,13 +168,17 @@ static esp_err_t captureHandler(httpd_req_t *req) {
 }
 
 static esp_err_t statusHandler(httpd_req_t *req) {
-  char buf[320];
+  char buf[384];
+  int w = 0, h = 0;
+  camera_fb_t *probe = active_map ? esp_camera_fb_get() : NULL;
+  if (probe) { w = probe->width; h = probe->height; esp_camera_fb_return(probe); }
   int n = snprintf(buf, sizeof(buf),
-                   "{\"pin_map\":\"%s\",\"camera\":%s,\"native_jpeg\":%s,\"ip\":\"%s\","
+                   "{\"pin_map\":\"%s\",\"camera\":%s,\"native_jpeg\":%s,"
+                   "\"width\":%d,\"height\":%d,\"ip\":\"%s\","
                    "\"rssi\":%d,\"frames_served\":%u,\"psram\":%s,\"heap\":%u}",
                    active_map ? active_map->name : "none",
                    active_map ? "true" : "false", native_jpeg ? "true" : "false",
-                   WiFi.localIP().toString().c_str(), (int)WiFi.RSSI(),
+                   w, h, WiFi.localIP().toString().c_str(), (int)WiFi.RSSI(),
                    (unsigned)frames_served, psramFound() ? "true" : "false",
                    (unsigned)ESP.getFreeHeap());
   httpd_resp_set_type(req, "application/json");
