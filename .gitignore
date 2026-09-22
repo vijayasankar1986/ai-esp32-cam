@@ -5,3 +5,8 @@ ros2_ws/install/
 ros2_ws/log/
 firmware/camera_station/secrets.h
 secrets.h
+firmware/*/build/
+build/
+*.bin
+*.elf
+*.map
