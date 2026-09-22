@@ -139,6 +139,7 @@ def status():
     disk = shutil.disk_usage(ROOT)
     data['disk_free_gb'] = round(disk.free / 1024**3, 1)
     data['control'] = CONTROL and JOG['publisher'] is not None
+    data['limits'] = joint_limits()
     data['jog_pose'] = list(JOG['pose'])
     data['ros_distro'] = os.environ.get('ROS_DISTRO', 'not sourced')
     data['ros_domain'] = os.environ.get('ROS_DOMAIN_ID', '0')
@@ -148,6 +149,33 @@ def status():
     except (OSError, ValueError):
         data['test']['telemetry'] = None
     return data
+
+
+def joint_limits():
+    """Joint limits from the params file the node is started with.
+
+    Read rather than hardcoded, so widening the range in one place is enough
+    and the jog buttons cannot offer angles the node would reject. Falls back
+    to the conservative starting range if the file cannot be parsed.
+    """
+    lower, upper = [60] * 4, [120] * 4
+    try:
+        text = (ROOT / 'ros2_ws/src/arm_poc/config/poc.yaml').read_text()
+        for key, target in (('min_angles', 'lower'), ('max_angles', 'upper')):
+            for line in text.splitlines():
+                stripped = line.strip()
+                if stripped.startswith(key + ':'):
+                    values = [int(v) for v in
+                              stripped.split('[', 1)[1].split(']', 1)[0].split(',')]
+                    if len(values) == 4:
+                        if target == 'lower':
+                            lower = values
+                        else:
+                            upper = values
+                    break
+    except (OSError, ValueError, IndexError):
+        pass
+    return {'min': lower, 'max': upper}
 
 
 def run_test():

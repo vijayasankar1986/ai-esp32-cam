@@ -13,8 +13,12 @@ const bool CALIBRATED = true;
 // gripper and must be confirmed during calibration: command one joint at a
 // time and record which physically moves. See docs/HARDWARE.md.
 const int PINS[4] = {27, 26, 25, 33};
-const int MIN_ANGLE[4] = {80, 80, 80, 80};
-const int MAX_ANGLE[4] = {100, 100, 100, 100};
+// Widened from the 80-100 starting range at the operator's request. Still well
+// short of the servo's 0-180: the mechanism binds long before that, and a
+// stalled servo draws its maximum current, which on USB power means a
+// brownout. Narrow any joint that binds before reaching these.
+const int MIN_ANGLE[4] = {60, 60, 60, 60};
+const int MAX_ANGLE[4] = {120, 120, 120, 120};
 // Move one joint at a time. Four SG90s stall at roughly 650-750 mA each, so
 // driving them together can pull well past what a USB port supplies; the rail
 // sags, the ESP32 browns out mid-motion and the arm drops. Stepping one joint

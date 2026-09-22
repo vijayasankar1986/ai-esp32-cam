@@ -152,8 +152,8 @@ addEventListener('keydown',e=>{
    into movement nobody asked for. The node expires a manual pose after its
    manual_timeout, so releasing simply means we stop refreshing. */
 const JOINTS=[{n:'BASE',p:'D27'},{n:'SHOULDER',p:'D26'},{n:'ELBOW',p:'D25'},{n:'GRIPPER',p:'D33'}];
-const JOG_MIN=80, JOG_MAX=100;
-let jogPose=[90,90,90,90], jogOn=false, jogHold=null, jogBuilt=false;
+let JOG_MIN=[60,60,60,60], JOG_MAX=[120,120,120,120];
+let jogPose=[90,90,90,90], jogOn=false, jogHold=null, jogLapse=null, jogBuilt=false;
 
 function buildJog(){
  if(jogBuilt)return; jogBuilt=true;
@@ -169,7 +169,7 @@ function buildJog(){
   box.append(h,v,row);return box;}));
 }
 function nudge(i,d){
- jogPose[i]=Math.max(JOG_MIN,Math.min(JOG_MAX,jogPose[i]+d));
+ jogPose[i]=Math.max(JOG_MIN[i],Math.min(JOG_MAX[i],jogPose[i]+d));
  $('jogv'+i).textContent=jogPose[i]+'°';
  sendJog();startHold();
 }
@@ -186,24 +186,29 @@ async function sendJog(){
    the operator is still jogging, and let it lapse when they stop. */
 function startHold(){
  if(jogHold)clearInterval(jogHold);
+ if(jogLapse)clearTimeout(jogLapse);
  jogHold=setInterval(sendJog,700);
- setTimeout(()=>{if(jogHold){clearInterval(jogHold);jogHold=null;
-  $('jog-reply').textContent='hold lapsed — node returns home';}},30000);
+ // Restarted on every nudge, so continuous jogging never trips it; it only
+ // fires after two idle minutes, releasing an arm nobody is driving.
+ jogLapse=setTimeout(()=>{if(jogHold){clearInterval(jogHold);jogHold=null;
+  $('jog-reply').textContent='idle — node returns home';}},120000);
 }
 $('jog-home').onclick=()=>{jogPose=[90,90,90,90];
  JOINTS.forEach((_,i)=>$('jogv'+i).textContent='90°');sendJog();startHold();};
 $('jog-release').onclick=()=>{if(jogHold){clearInterval(jogHold);jogHold=null;}
+ if(jogLapse){clearTimeout(jogLapse);jogLapse=null;}
  $('jog-reply').textContent='released — node returns home when the pose expires';};
 
 function renderJog(s){
  buildJog();
  jogOn=Boolean(s.control);
+ if(s.limits){JOG_MIN=s.limits.min;JOG_MAX=s.limits.max;}
  $('jog-state').textContent=jogOn?'Control enabled':'Read-only';
  $('jog-state').className='pill '+(jogOn?'warn':'');
  document.querySelector('.jog-panel').classList.toggle('locked',!jogOn);
  for(const b of document.querySelectorAll('.jogs button'))b.disabled=!jogOn;
  $('jog-home').disabled=!jogOn;$('jog-release').disabled=!jogOn;
- $('jog-keys').textContent=jogOn?keyLabel():'';
+ $('jog-keys').textContent=jogOn?keyLabel()+`   ·   range ${JOG_MIN[0]}–${JOG_MAX[0]}°`:'';
  if(!jogOn)$('jog-note').textContent='Control is disabled. Start the dashboard with '
   +'ARM_DASHBOARD_CONTROL=1 and the node with allow_manual:=true. Off by default because '
   +'this server has no authentication.';
@@ -230,7 +235,7 @@ function keyLabel(){
 function pumpKeys(){
  if(!held.size){clearInterval(repeatTimer);repeatTimer=null;return;}
  for(const [joint,dir] of held.values()){
-  jogPose[joint]=Math.max(JOG_MIN,Math.min(JOG_MAX,jogPose[joint]+dir));
+  jogPose[joint]=Math.max(JOG_MIN[joint],Math.min(JOG_MAX[joint],jogPose[joint]+dir));
   $('jogv'+joint).textContent=jogPose[joint]+'°';
   lastKeyJoint=joint;
  }
