@@ -22,8 +22,9 @@ from .logic import (DetectionGate, color_ranges, fit_pixel_to_joints,
 class CameraReader:
     """Bounded JPEG extraction for snapshot and MJPEG HTTP responses."""
 
-    def __init__(self, url):
+    def __init__(self, url, connect_timeout=5.0, read_timeout=10.0):
         self.url = url
+        self.timeout = (connect_timeout, read_timeout)
         self.lock = threading.Lock()
         self.latest = None
         self.error = 'Waiting for first frame'
@@ -34,7 +35,7 @@ class CameraReader:
     def run(self):
         while not self.stop.is_set():
             try:
-                with requests.get(self.url, stream=True, timeout=(3, 2)) as response:
+                with requests.get(self.url, stream=True, timeout=self.timeout) as response:
                     response.raise_for_status()
                     buffer = b''
                     for chunk in response.iter_content(chunk_size=4096):
@@ -73,7 +74,8 @@ class ArmPOC(Node):
             'home_pose': [90, 90, 90, 90], 'trigger_pose': [90, 90, 90, 90],
             'min_angles': [80, 80, 80, 80], 'max_angles': [100, 100, 100, 100],
             'target_color': 'red', 'color_fraction': 0.05, 'stable_frames': 3,
-            'hold_seconds': 3.0, 'camera_stale_seconds': 3.0,
+            'hold_seconds': 3.0, 'camera_stale_seconds': 8.0,
+            'connect_timeout': 5.0, 'read_timeout': 10.0, 'auto_recover': True,
         }
         self.p = {k: self.declare_parameter(k, v).value for k, v in defaults.items()}
         # dynamic_typing because an empty default would otherwise be inferred as
@@ -118,7 +120,8 @@ class ArmPOC(Node):
             except Exception:
                 self.port.close()
                 raise
-        self.camera = CameraReader(self.p['camera_url'])
+        self.camera = CameraReader(self.p['camera_url'], self.p['connect_timeout'],
+                                   self.p['read_timeout'])
         self.started = time.monotonic()
         self.timer = self.create_timer(0.1, self.tick)
         self.get_logger().info(
@@ -168,7 +171,9 @@ class ArmPOC(Node):
 
     def halt(self, reason):
         self.fault = True
-        self.get_logger().error(reason + '; restart node after resolving')
+        suffix = ('; will resume automatically when frames return'
+                  if self.p['auto_recover'] else '; restart node after resolving')
+        self.get_logger().error(reason + suffix)
         if self.port:
             try:
                 self.port.write(b'STOP\n')
@@ -185,7 +190,17 @@ class ArmPOC(Node):
                 self.halt('Camera feed stale: ' + (error or 'no frames received'))
             return
         if self.fault:
-            return
+            if not self.p['auto_recover']:
+                return
+            # Frames are flowing again. Resume from home with a fresh gate, so a
+            # recovery can never continue a motion that was interrupted midway.
+            self.fault = False
+            self.command = self.home
+            self.pose = self.home_pose
+            self.phase = 'idle'
+            self.gate = DetectionGate(self.p['stable_frames'])
+            self.last_sent = 0.0
+            self.get_logger().info('Camera feed restored; resuming from home')
         if latest and latest[0] != self.last_frame:
             self.last_frame, frame = latest
             message = self.bridge.cv2_to_imgmsg(frame, encoding='bgr8')

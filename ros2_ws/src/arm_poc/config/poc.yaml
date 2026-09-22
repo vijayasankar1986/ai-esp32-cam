@@ -23,4 +23,11 @@ arm_poc:
     calibration: []
     stable_frames: 3
     hold_seconds: 3.0
-    camera_stale_seconds: 3.0
+    camera_stale_seconds: 8.0 # Must exceed the camera's slowest frame interval
+    connect_timeout: 5.0
+    read_timeout: 10.0 # A VGA frame takes about a second to encode; leave room
+    # On a stale feed the node always sends STOP. With auto_recover it then waits
+    # for frames and resumes from home with a fresh detection gate, so a recovery
+    # can never continue an interrupted motion. Set false to require a manual
+    # restart instead, which you may prefer once real servos are attached.
+    auto_recover: true
