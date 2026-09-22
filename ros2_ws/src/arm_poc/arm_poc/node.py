@@ -76,7 +76,7 @@ class ArmPOC(Node):
             'target_color': 'red', 'color_fraction': 0.05, 'stable_frames': 3,
             'hold_seconds': 3.0, 'camera_stale_seconds': 8.0,
             'connect_timeout': 5.0, 'read_timeout': 10.0, 'auto_recover': True,
-            'allow_manual': False, 'manual_timeout': 2.0,
+            'allow_manual': False, 'manual_timeout': 2.0, 'serial_timeout': 1.0,
         }
         self.p = {k: self.declare_parameter(k, v).value for k, v in defaults.items()}
         # dynamic_typing because an empty default would otherwise be inferred as
@@ -100,6 +100,7 @@ class ArmPOC(Node):
         self.port = None
         self.camera = None
         self.fault = False
+        self.fault_kind = None
         self.command = self.home
         self.pose = self.home_pose
         self.phase = 'idle'
@@ -117,7 +118,9 @@ class ArmPOC(Node):
             self.get_logger().warn(
                 'Manual control ENABLED: /arm/manual_pose can move the arm')
         if not self.p['dry_run']:
-            self.port = serial.Serial(self.p['serial_port'], 115200, timeout=0.3, write_timeout=0.3)
+            self.port = serial.Serial(self.p['serial_port'], 115200,
+                                      timeout=self.p['serial_timeout'],
+                                      write_timeout=self.p['serial_timeout'])
             try:
                 time.sleep(2)  # USB opening resets the ESP32.
                 self.handshake()
@@ -226,12 +229,18 @@ class ArmPOC(Node):
         self.port.write(command)
         reply = self.port.readline().strip()
         if reply != expected:
-            raise RuntimeError(f'Controller reply {reply!r}; expected {expected!r}')
+            self.drain(quiet=0.2, limit=1.0)   # Resync so the next try is clean.
+            hint = (' (no reply: controller may have reset, check servo power)'
+                    if reply == b'' else '')
+            raise RuntimeError(
+                f'Controller reply {reply!r}; expected {expected!r}{hint}')
 
-    def halt(self, reason):
+    def halt(self, reason, kind='camera'):
         self.fault = True
-        suffix = ('; will resume automatically when frames return'
-                  if self.p['auto_recover'] else '; restart node after resolving')
+        self.fault_kind = kind
+        recoverable = kind == 'camera' and self.p['auto_recover']
+        suffix = ('; will resume automatically when frames return' if recoverable
+                  else '; restart the node after resolving')
         self.get_logger().error(reason + suffix)
         if self.port:
             try:
@@ -249,7 +258,10 @@ class ArmPOC(Node):
                 self.halt('Camera feed stale: ' + (error or 'no frames received'))
             return
         if self.fault:
-            if not self.p['auto_recover']:
+            # Only camera faults clear themselves. A controller that stopped
+            # answering will not start again because frames resumed, and
+            # retrying it every tick just floods the log.
+            if not self.p['auto_recover'] or self.fault_kind != 'camera':
                 return
             # Frames are flowing again. Resume from home with a fresh gate, so a
             # recovery can never continue a motion that was interrupted midway.
@@ -325,7 +337,7 @@ class ArmPOC(Node):
                     self.exchange(self.command, b'OK')
                 self.last_sent = now
             except Exception as exc:
-                self.halt(str(exc))
+                self.halt(str(exc), kind='controller')
 
     def close(self):
         if self.camera:

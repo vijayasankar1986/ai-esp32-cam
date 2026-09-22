@@ -23,6 +23,7 @@ const int MAX_ANGLE[4] = {100, 100, 100, 100};
 // in poc.yaml to suit. Set false only with a separate servo supply fitted.
 const bool SEQUENTIAL_MOTION = true;
 const int STEP_MS = 20;        // Milliseconds per one-degree step.
+const int ATTACH_STAGGER_MS = 120; // Gap between bringing each servo up.
 const int PULSE_MIN_US = 1000; // Verify your actual servo specifications.
 const int PULSE_MAX_US = 2000;
 int currentAngle[4] = {90, 90, 90, 90};
@@ -42,11 +43,15 @@ void stopServos() {
   active = false;
 }
 
-void writeAngle(int joint) {
+void writeAngle(int joint) {  // Caller must have attached PINS[joint] first.
   const long pulse = map(currentAngle[joint], 0, 180, PULSE_MIN_US, PULSE_MAX_US);
   ledcWrite(PINS[joint], (uint32_t)((pulse * 65535L) / 20000L));
 }
 
+// Bring the servos up one at a time. Attaching all four and writing an angle
+// to each in the same instant makes every servo seek at once, and that inrush
+// is what browns out a USB-powered board: the controller resets mid-command
+// and the host sees an empty reply. Staggering spreads the current.
 bool enableServos() {
   for (int i = 0; i < 4; ++i) {
     if (!ledcAttach(PINS[i], 50, 16)) {
@@ -54,9 +59,10 @@ bool enableServos() {
       stopServos();
       return false;
     }
+    writeAngle(i);
+    delay(ATTACH_STAGGER_MS);
   }
   active = true;
-  for (int i = 0; i < 4; ++i) writeAngle(i);
   return true;
 }
 
