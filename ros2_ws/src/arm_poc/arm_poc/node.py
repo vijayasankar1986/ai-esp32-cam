@@ -1,3 +1,4 @@
+import math
 import threading
 import time
 
@@ -9,7 +10,7 @@ import rclpy
 from cv_bridge import CvBridge
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
-from sensor_msgs.msg import Image
+from sensor_msgs.msg import Image, JointState
 from std_msgs.msg import Bool
 
 from .logic import DetectionGate, move_command
@@ -76,13 +77,16 @@ class ArmPOC(Node):
         if not all(np.isfinite(self.p[k]) and self.p[k] > 0 for k in
                    ('hold_seconds', 'camera_stale_seconds')):
             raise ValueError('Timeouts must be finite and positive')
-        self.home = move_command(self.p['home_pose'], self.p['min_angles'], self.p['max_angles'])
-        self.target = move_command(self.p['trigger_pose'], self.p['min_angles'], self.p['max_angles'])
+        self.home_pose = [int(a) for a in self.p['home_pose']]
+        self.target_pose = [int(a) for a in self.p['trigger_pose']]
+        self.home = move_command(self.home_pose, self.p['min_angles'], self.p['max_angles'])
+        self.target = move_command(self.target_pose, self.p['min_angles'], self.p['max_angles'])
         self.gate = DetectionGate(self.p['stable_frames'])
         self.port = None
         self.camera = None
         self.fault = False
         self.command = self.home
+        self.pose = self.home_pose
         self.phase = 'idle'
         self.deadline = 0.0
         self.last_frame = 0.0
@@ -91,6 +95,7 @@ class ArmPOC(Node):
         self.bridge = CvBridge()
         self.images = self.create_publisher(Image, '/camera/image_raw', qos_profile_sensor_data)
         self.detected = self.create_publisher(Bool, '/vision/red_detected', 10)
+        self.joints = self.create_publisher(JointState, '/arm/joint_states', 10)
         if not self.p['dry_run']:
             self.port = serial.Serial(self.p['serial_port'], 115200, timeout=0.3, write_timeout=0.3)
             try:
@@ -145,6 +150,7 @@ class ArmPOC(Node):
             event = self.gate.update(red)
             if event and self.phase == 'idle':
                 self.command = self.target
+                self.pose = self.target_pose
                 self.phase = 'target'
                 self.deadline = now + self.p['hold_seconds']
                 self.last_sent = 0.0
@@ -152,12 +158,18 @@ class ArmPOC(Node):
         if self.phase != 'idle' and now >= self.deadline:
             if self.phase == 'target':
                 self.command = self.home
+                self.pose = self.home_pose
                 self.phase = 'returning'
                 self.deadline = now + self.p['hold_seconds']
                 self.last_sent = 0.0
                 self.get_logger().info('Returning home')
             else:
                 self.phase = 'idle'
+        state = JointState()
+        state.header.stamp = self.get_clock().now().to_msg()
+        state.name = ['joint0', 'joint1', 'joint2', 'joint3']
+        state.position = [math.radians(a) for a in self.pose]
+        self.joints.publish(state)
         if now - self.last_sent >= 0.5:
             try:
                 if self.port:

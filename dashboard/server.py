@@ -1,5 +1,6 @@
 """LAN status dashboard. Observes ROS; never sends servo commands."""
 import json
+import math
 import os
 from pathlib import Path
 import shutil
@@ -18,6 +19,7 @@ RUNTIME = Path(tempfile.mkdtemp(prefix='arm-dashboard-'))
 LOCK = threading.Lock()
 STATE = {'ros': False, 'ros_error': '', 'image_count': 0, 'last_image': 0,
          'last_detection': 0, 'red': None, 'publishers': 0, 'jpeg': None,
+         'joints': None, 'last_joints': 0,
          'test': {'status': 'not_run', 'output': '', 'finished': None}}
 
 
@@ -35,7 +37,7 @@ def ros_observer():
         from cv_bridge import CvBridge
         from rclpy.node import Node
         from rclpy.qos import qos_profile_sensor_data
-        from sensor_msgs.msg import Image
+        from sensor_msgs.msg import Image, JointState
         from std_msgs.msg import Bool
         rclpy.init()
         node = Node('arm_dashboard_observer')
@@ -61,7 +63,13 @@ def ros_observer():
                 STATE['red'] = msg.data
                 STATE['last_detection'] = time.monotonic()
 
+        def on_joints(msg):
+            with LOCK:
+                STATE['joints'] = [round(math.degrees(a), 1) for a in msg.position]
+                STATE['last_joints'] = time.monotonic()
+
         node.create_subscription(Image, '/camera/image_raw', on_image, qos_profile_sensor_data)
+        node.create_subscription(JointState, '/arm/joint_states', on_joints, 10)
         node.create_subscription(Bool, '/vision/red_detected', on_detection, 10)
 
         def graph():
@@ -85,6 +93,9 @@ def status():
     now = time.monotonic()
     data['frame_age'] = round(now - data.pop('last_image'), 1) if data['last_image'] else None
     data.pop('last_image', None)
+    joint_time = data.pop('last_joints')
+    if not joint_time or now - joint_time > 3:
+        data['joints'] = None
     detection_time = data.pop('last_detection')
     if not detection_time or now - detection_time > 3:
         data['red'] = None

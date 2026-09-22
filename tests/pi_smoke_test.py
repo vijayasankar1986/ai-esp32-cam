@@ -10,7 +10,7 @@ import cv2
 import numpy as np
 import rclpy
 from rclpy.qos import qos_profile_sensor_data
-from sensor_msgs.msg import Image
+from sensor_msgs.msg import Image, JointState
 from std_msgs.msg import Bool
 
 from arm_poc.node import ArmPOC
@@ -46,9 +46,10 @@ rclpy.init(args=['--ros-args', '-p', f'camera_url:=http://127.0.0.1:{server.serv
 node = None
 try:
     node = ArmPOC()
-    images, detections, phases = [], [], set()
+    images, detections, joints, phases = [], [], [], set()
     image_sub = node.create_subscription(Image, '/camera/image_raw', images.append, qos_profile_sensor_data)
     detection_sub = node.create_subscription(Bool, '/vision/red_detected', lambda msg: detections.append(msg.data), 10)
+    joint_sub = node.create_subscription(JointState, '/arm/joint_states', joints.append, 10)
 
     def spin_for(seconds):
         until = time.monotonic() + seconds
@@ -60,6 +61,7 @@ try:
                 pending = report.with_suffix('.tmp')
                 pending.write_text(json.dumps({'frames': len(images), 'phase': node.phase,
                                               'red': detections[-1] if detections else None,
+                                              'joints': list(node.pose),
                                               'fault': node.fault}))
                 pending.replace(report)
             if images and os.environ.get('ARM_POC_PREVIEW'):
@@ -75,13 +77,14 @@ try:
     assert node.port is None, 'Dry run unexpectedly opened serial'
     assert images and images[-1].encoding == 'bgr8', 'Image publication failed'
     assert True in detections and 'target' in phases and 'returning' in phases
+    assert joints and len(joints[-1].position) == 4, 'Joint states not published'
     state['red'] = False
     spin_for(1.0)
     assert detections[-1] is False and node.gate.armed, 'Removal did not rearm'
     state['offline'] = True
     spin_for(2.0)
     assert node.fault, 'Lost camera did not latch a fault'
-    print(f'PASS: {len(images)} images; red detection, preset phases, removal rearm, stale-feed fault; serial unopened')
+    print(f'PASS: {len(images)} images; {len(joints)} joint states; red detection, preset phases, removal rearm, stale-feed fault; serial unopened')
 finally:
     if node:
         node.close()
