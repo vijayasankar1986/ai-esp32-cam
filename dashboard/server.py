@@ -1,4 +1,15 @@
-"""LAN status dashboard. Observes ROS; never sends servo commands."""
+"""LAN status dashboard.
+
+Observes ROS. It can also jog the arm, but only when ARM_DASHBOARD_CONTROL=1 is
+set in the environment AND the node was started with allow_manual:=true. Both
+are off by default, because this server has no authentication and binds every
+interface: with control on, anyone who can reach port 8080 can move the arm.
+Prefer an SSH tunnel over exposing it.
+
+It never opens the serial port. Jogs are published on /arm/manual_pose and the
+ROS node remains the only owner of the controller, so joint limits and the
+watchdog stay in one place.
+"""
 import json
 import math
 import os
@@ -11,11 +22,17 @@ import tempfile
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+try:
+    from sensor_msgs.msg import JointState
+except ImportError:
+    JointState = None        # Status-only mode without ROS on the path.
 from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
 ASSETS = Path(__file__).resolve().parent
 RUNTIME = Path(tempfile.mkdtemp(prefix='arm-dashboard-'))
+CONTROL = os.environ.get('ARM_DASHBOARD_CONTROL') == '1'
+JOG = {'publisher': None, 'pose': [90.0, 90.0, 90.0, 90.0]}
 LOCK = threading.Lock()
 # Signals waiting MJPEG clients that a new frame landed, so the stream is
 # driven by arrivals rather than polling.
@@ -75,6 +92,8 @@ def ros_observer():
 
         node.create_subscription(Image, '/camera/image_raw', on_image, qos_profile_sensor_data)
         node.create_subscription(JointState, '/arm/joint_states', on_joints, 10)
+        if CONTROL:
+            JOG['publisher'] = node.create_publisher(JointState, '/arm/manual_pose', 10)
         node.create_subscription(Bool, '/vision/color_detected', on_detection, 10)
 
         def graph():
@@ -113,6 +132,8 @@ def status():
     data['temperature'] = round(int(temp) / 1000, 1) if temp.isdigit() else None
     disk = shutil.disk_usage(ROOT)
     data['disk_free_gb'] = round(disk.free / 1024**3, 1)
+    data['control'] = CONTROL and JOG['publisher'] is not None
+    data['jog_pose'] = list(JOG['pose'])
     data['ros_distro'] = os.environ.get('ROS_DISTRO', 'not sourced')
     data['ros_domain'] = os.environ.get('ROS_DOMAIN_ID', '0')
     data['load'] = round(os.getloadavg()[0], 2)
@@ -212,6 +233,8 @@ class Handler(BaseHTTPRequestHandler):
         origin = self.headers.get('Origin')
         if self.headers.get('X-Arm-Dashboard') != '1' or (origin and urlsplit(origin).netloc != self.headers.get('Host')):
             return self.respond(403, {'error': 'Same-origin request required'})
+        if self.path == '/api/jog':
+            return self.handle_jog()
         if self.path != '/api/test':
             return self.respond(404, {'error': 'Not found'})
         with LOCK:
@@ -222,6 +245,29 @@ class Handler(BaseHTTPRequestHandler):
             (RUNTIME / name).unlink(missing_ok=True)
         threading.Thread(target=run_test, daemon=True).start()
         self.respond(202, {'status': 'running'})
+
+    def handle_jog(self):
+        """Publish one jogged pose. Absolute angles, so a dropped request
+        cannot accumulate into a movement nobody asked for."""
+        if not CONTROL or JOG['publisher'] is None:
+            return self.respond(403, {'error': 'Control disabled. Start with '
+                                               'ARM_DASHBOARD_CONTROL=1 and '
+                                               'allow_manual:=true'})
+        try:
+            length = int(self.headers.get('Content-Length', 0))
+            body = json.loads(self.rfile.read(length) or b'{}')
+            pose = [float(a) for a in body['pose']]
+        except (ValueError, KeyError, TypeError):
+            return self.respond(400, {'error': 'Body must be {"pose": [a, b, c, d]}'})
+        if len(pose) != 4 or not all(0 <= a <= 180 for a in pose):
+            return self.respond(400, {'error': 'Need four angles within 0-180'})
+        message = JointState()
+        message.name = ['joint0', 'joint1', 'joint2', 'joint3']
+        message.position = [math.radians(a) for a in pose]
+        JOG['publisher'].publish(message)
+        with LOCK:
+            JOG['pose'] = pose
+        return self.respond(200, {'pose': pose})
 
     def log_message(self, *args):
         pass

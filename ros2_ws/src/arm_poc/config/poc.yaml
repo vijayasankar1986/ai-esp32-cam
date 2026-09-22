@@ -32,3 +32,10 @@ arm_poc:
     # can never continue an interrupted motion. Set false to require a manual
     # restart instead, which you may prefer once real servos are attached.
     auto_recover: true
+    # Manual jog from the dashboard. Off by default: the dashboard has no
+    # authentication and binds every interface, so with this on anyone who can
+    # reach port 8080 can move the arm. The dashboard must also be started with
+    # ARM_DASHBOARD_CONTROL=1; both ends have to agree before anything moves.
+    allow_manual: false
+    manual_timeout: 2.0 # A jog not refreshed within this window lapses and the
+                        # arm returns home, so a closed tab cannot leave it held

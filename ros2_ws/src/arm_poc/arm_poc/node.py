@@ -76,6 +76,7 @@ class ArmPOC(Node):
             'target_color': 'red', 'color_fraction': 0.05, 'stable_frames': 3,
             'hold_seconds': 3.0, 'camera_stale_seconds': 8.0,
             'connect_timeout': 5.0, 'read_timeout': 10.0, 'auto_recover': True,
+            'allow_manual': False, 'manual_timeout': 2.0,
         }
         self.p = {k: self.declare_parameter(k, v).value for k, v in defaults.items()}
         # dynamic_typing because an empty default would otherwise be inferred as
@@ -111,6 +112,10 @@ class ArmPOC(Node):
         self.detected = self.create_publisher(Bool, '/vision/color_detected', 10)
         self.joints = self.create_publisher(JointState, '/arm/joint_states', 10)
         self.target = self.create_publisher(PointStamped, '/vision/target_point', 10)
+        if self.p['allow_manual']:
+            self.create_subscription(JointState, '/arm/manual_pose', self.on_manual, 10)
+            self.get_logger().warn(
+                'Manual control ENABLED: /arm/manual_pose can move the arm')
         if not self.p['dry_run']:
             self.port = serial.Serial(self.p['serial_port'], 115200, timeout=0.3, write_timeout=0.3)
             try:
@@ -127,6 +132,31 @@ class ArmPOC(Node):
         self.get_logger().info(
             ('Dry run enabled' if self.p['dry_run'] else 'Hardware mode: commanding home')
             + f", tracking {self.p['target_color']}")
+
+    def on_manual(self, message):
+        """Apply a jogged pose, if manual control is enabled and safe to accept.
+
+        Manual commands expire after manual_timeout, so a dashboard that closes
+        its tab or loses the network cannot leave the arm holding a pose
+        indefinitely. Angles go through move_command, so the same limit checks
+        that guard the vision path guard this one.
+        """
+        if self.fault:
+            return
+        angles = [int(round(math.degrees(a))) for a in message.position]
+        if len(angles) != 4:
+            self.get_logger().warn('Manual pose ignored: need exactly four joints')
+            return
+        try:
+            command = move_command(angles, self.p['min_angles'], self.p['max_angles'])
+        except ValueError as exc:
+            self.get_logger().warn(f'Manual pose rejected: {exc}')
+            return
+        self.command = command
+        self.pose = angles
+        self.phase = 'manual'
+        self.deadline = time.monotonic() + self.p['manual_timeout']
+        self.last_sent = 0.0
 
     def build_calibration(self):
         """Parse the flat calibration array into an image-to-joint model.
@@ -237,7 +267,16 @@ class ArmPOC(Node):
                 self.deadline = now + self.p['hold_seconds']
                 self.last_sent = 0.0
         if self.phase != 'idle' and now >= self.deadline:
-            if self.phase == 'target':
+            if self.phase == 'manual':
+                # The jog stopped refreshing. Go home rather than hold a pose
+                # nobody is watching any more.
+                self.command = self.home
+                self.pose = self.home_pose
+                self.phase = 'returning'
+                self.deadline = now + self.p['hold_seconds']
+                self.last_sent = 0.0
+                self.get_logger().info('Manual control released; returning home')
+            elif self.phase == 'target':
                 self.command = self.home
                 self.pose = self.home_pose
                 self.phase = 'returning'

@@ -28,7 +28,7 @@ function render(s){current=s;$('connection').textContent='Pi connected';$('conne
  const t=s.test, running=t.status==='running';$('run-test').disabled=running||busy;$('run-test').firstChild.textContent=running?'Test running… ':'Run system test ';
  $('test-state').textContent={not_run:'Not run this session',running:'Running · no servo commands',passed:'Passed',failed:'Needs attention'}[t.status];$('test-state').className='pill '+(t.status==='passed'?'ok':t.status==='failed'?'warn':'');
  $('test-detail').textContent=running?(t.telemetry?`${t.telemetry.frames} images processed. ${words[t.telemetry.phase]||t.telemetry.phase}.`:'Starting logic and ROS checks…'):t.status==='passed'?'Logic and ROS checks passed. Physical camera and arm remain unverified.':t.status==='failed'?'Check the output below for the failure.':'Run a test to see current results.';
- $('output').textContent=t.output||(running?'Test in progress…':'No test has been run since the dashboard started.');$('updated').textContent='Updated '+new Date().toLocaleTimeString();renderFrame();renderArm(s);
+ $('output').textContent=t.output||(running?'Test in progress…':'No test has been run since the dashboard started.');$('updated').textContent='Updated '+new Date().toLocaleTimeString();renderFrame();renderArm(s);renderJog(s);
 }
 async function refresh(){try{const r=await fetch('/api/status',{signal:AbortSignal.timeout(5000)});if(!r.ok)throw Error(r.status);render(await r.json());}catch(e){$('connection').textContent='Pi unreachable';$('connection').className='pill warn';$('offline').hidden=false;$('run-test').disabled=true;}finally{setTimeout(refresh,1000);}}
 $('run-test').onclick=async()=>{busy=true;$('run-test').disabled=true;select('test');try{const r=await fetch('/api/test',{method:'POST',headers:{'X-Arm-Dashboard':'1'},signal:AbortSignal.timeout(5000)});if(!r.ok)throw Error((await r.json()).error||r.status);$('test-state').textContent='Starting…';}catch(e){$('test-detail').textContent='Could not start test: '+e.message;}finally{busy=false;}};
@@ -146,3 +146,64 @@ addEventListener('keydown',e=>{
  if(e.key==='f'&&!/^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName))
   toggleFull(document.querySelector('.viewer'));
 });
+
+/* --- Manual jog ------------------------------------------------------------
+   Sends absolute poses, never deltas, so a dropped request cannot accumulate
+   into movement nobody asked for. The node expires a manual pose after its
+   manual_timeout, so releasing simply means we stop refreshing. */
+const JOINTS=[{n:'BASE',p:'D27'},{n:'SHOULDER',p:'D26'},{n:'ELBOW',p:'D25'},{n:'GRIPPER',p:'D33'}];
+const JOG_MIN=80, JOG_MAX=100;
+let jogPose=[90,90,90,90], jogOn=false, jogHold=null, jogBuilt=false;
+
+function buildJog(){
+ if(jogBuilt)return; jogBuilt=true;
+ $('jog-grid').replaceChildren(...JOINTS.map((j,i)=>{
+  const box=document.createElement('div');box.className='jog';
+  const h=document.createElement('h3');h.textContent=`${j.n} · ${j.p}`;
+  const v=document.createElement('div');v.className='val';v.id='jogv'+i;v.textContent='90°';
+  const row=document.createElement('div');row.className='row';
+  for(const d of [-5,-1,1,5]){
+   const b=document.createElement('button');b.textContent=(d>0?'+':'')+d;
+   b.onclick=()=>nudge(i,d);row.appendChild(b);
+  }
+  box.append(h,v,row);return box;}));
+}
+function nudge(i,d){
+ jogPose[i]=Math.max(JOG_MIN,Math.min(JOG_MAX,jogPose[i]+d));
+ $('jogv'+i).textContent=jogPose[i]+'°';
+ sendJog();startHold();
+}
+async function sendJog(){
+ try{
+  const r=await fetch('/api/jog',{method:'POST',headers:{'X-Arm-Dashboard':'1',
+   'Content-Type':'application/json'},body:JSON.stringify({pose:jogPose}),
+   signal:AbortSignal.timeout(4000)});
+  const j=await r.json();
+  $('jog-reply').textContent=r.ok?`sent ${j.pose.join(' ')}`:('refused: '+(j.error||r.status));
+ }catch(e){$('jog-reply').textContent='send failed: '+e.message;}
+}
+/* The node drops a manual pose that stops being refreshed, so hold it while
+   the operator is still jogging, and let it lapse when they stop. */
+function startHold(){
+ if(jogHold)clearInterval(jogHold);
+ jogHold=setInterval(sendJog,700);
+ setTimeout(()=>{if(jogHold){clearInterval(jogHold);jogHold=null;
+  $('jog-reply').textContent='hold lapsed — node returns home';}},30000);
+}
+$('jog-home').onclick=()=>{jogPose=[90,90,90,90];
+ JOINTS.forEach((_,i)=>$('jogv'+i).textContent='90°');sendJog();startHold();};
+$('jog-release').onclick=()=>{if(jogHold){clearInterval(jogHold);jogHold=null;}
+ $('jog-reply').textContent='released — node returns home when the pose expires';};
+
+function renderJog(s){
+ buildJog();
+ jogOn=Boolean(s.control);
+ $('jog-state').textContent=jogOn?'Control enabled':'Read-only';
+ $('jog-state').className='pill '+(jogOn?'warn':'');
+ document.querySelector('.jog-panel').classList.toggle('locked',!jogOn);
+ for(const b of document.querySelectorAll('.jogs button'))b.disabled=!jogOn;
+ $('jog-home').disabled=!jogOn;$('jog-release').disabled=!jogOn;
+ if(!jogOn)$('jog-note').textContent='Control is disabled. Start the dashboard with '
+  +'ARM_DASHBOARD_CONTROL=1 and the node with allow_manual:=true. Off by default because '
+  +'this server has no authentication.';
+}
