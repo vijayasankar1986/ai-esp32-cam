@@ -50,6 +50,10 @@
 // it gains nothing from resolution: raise this only if you want a bigger
 // picture and can live with the frame rate.
 #define FRAME_SIZE FRAMESIZE_QVGA
+// Both -2..2. Raised from the default 0 because the frame was too dark and
+// too washed out for colour thresholding to find anything in it.
+#define BRIGHTNESS 1
+#define SATURATION 2
 
 struct PinMap {
   const char *name;
@@ -129,10 +133,31 @@ static bool tryBothFormats(const PinMap &m) {
   return tryPinMap(m, PIXFORMAT_RGB565);
 }
 
+// Sensors power up on their own defaults, which on this OV2640 produced a
+// frame averaging 45/255 brightness. Colour detection needs value >= 70 and
+// saturation >= 100, so a dark frame fails the test whatever is in front of
+// it. Enabling the automatic controls and lifting saturation is what makes the
+// picture usable for thresholding, not merely visible to a human.
+static void tuneSensor() {
+  sensor_t *s = esp_camera_sensor_get();
+  if (!s) return;
+  if (s->set_exposure_ctrl) s->set_exposure_ctrl(s, 1);   // auto exposure
+  if (s->set_aec2)          s->set_aec2(s, 1);            // and its fine stage
+  if (s->set_gain_ctrl)     s->set_gain_ctrl(s, 1);       // auto gain
+  if (s->set_whitebal)      s->set_whitebal(s, 1);
+  if (s->set_awb_gain)      s->set_awb_gain(s, 1);
+  if (s->set_gainceiling)   s->set_gainceiling(s, GAINCEILING_8X);
+  if (s->set_brightness)    s->set_brightness(s, BRIGHTNESS);
+  if (s->set_saturation)    s->set_saturation(s, SATURATION);
+  Serial.printf("Sensor tuned: auto exposure/gain/white balance, "
+                "brightness %d, saturation %d\n", BRIGHTNESS, SATURATION);
+}
+
 static void reportSensor() {
   sensor_t *s = esp_camera_sensor_get();
   if (s) Serial.printf("Sensor PID 0x%04x (GC2145 is 0x2145)\n", s->id.PID);
   Serial.printf("JPEG source: %s\n", native_jpeg ? "sensor hardware" : "software encoder");
+  tuneSensor();
 }
 
 static bool startCamera() {
