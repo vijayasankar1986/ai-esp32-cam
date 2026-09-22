@@ -66,11 +66,20 @@ struct PinMap {
 // camera_pins.h in the installed core. It carries an OV2640, which has a
 // hardware JPEG encoder, so tryBothFormats succeeds on its first attempt and
 // the board avoids the software encoding that limits the GC2145 to 7 fps.
+// Selected by chip, not probed across chips. On a classic ESP32 the S3 maps
+// use GPIO 6-11, which are wired to the SPI flash: driving them resets the
+// board instantly, and probing them produced a boot loop
+// (rst:0x8 TG1WDT_SYS_RESET) on an AI-Thinker before this guard existed.
 static const PinMap CANDIDATES[] = {
+#if defined(CONFIG_IDF_TARGET_ESP32S3)
   {"S3-CAM/Freenove/S3-EYE", -1, -1, 15,  4,  5, 16, 17, 18, 12, 10,  8,  9, 11,  6,  7, 13},
-  {"AI-Thinker ESP32-CAM",   32, -1,  0, 26, 27, 35, 34, 39, 36, 21, 19, 18,  5, 25, 23, 22},
   {"XIAO ESP32S3 Sense",     -1, -1, 10, 40, 39, 48, 11, 12, 14, 16, 18, 17, 15, 38, 47, 13},
   {"ESP32-S3 alt (40/39)",   -1, -1, 40, 17, 18, 39, 41, 42, 12,  3, 14, 47, 13, 21, 38, 11},
+#elif defined(CONFIG_IDF_TARGET_ESP32)
+  {"AI-Thinker ESP32-CAM",   32, -1,  0, 26, 27, 35, 34, 39, 36, 21, 19, 18,  5, 25, 23, 22},
+#else
+#error "Unsupported chip: add this board's camera pin map"
+#endif
 };
 static const size_t CANDIDATE_COUNT = sizeof(CANDIDATES) / sizeof(CANDIDATES[0]);
 
