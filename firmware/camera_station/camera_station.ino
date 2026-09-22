@@ -32,7 +32,10 @@
 #include "img_converters.h"
 #include "secrets.h"
 
-#define PIN_FORCE  0        // Candidate 0 is confirmed for this board; -1 probes all.
+// -1 probes every candidate so one build runs on any supported board. Set an
+// index to skip probing once the board is known: candidate 0 is the Hiwonder
+// S3, candidate 1 the AI-Thinker.
+#define PIN_FORCE  -1
 #define MDNS_NAME  "armcam" // Reachable as armcam.local where mDNS is supported.
 #define JPEG_QUALITY 80     // Software encoder, 0-100. Higher costs CPU and bandwidth.
 // Frame size. The GC2145 has no hardware JPEG, so every frame is encoded in
@@ -57,8 +60,15 @@ struct PinMap {
 
 // Index 0 is confirmed on the Hiwonder board; it is also the GOOUUU
 // ESP32-S3-CAM, Freenove ESP32-S3-WROOM CAM and ESP32-S3-EYE layout.
+//
+// AI-Thinker is a classic ESP32, not an S3, and needs the esp32:esp32:esp32cam
+// build target rather than esp32s3. Its pin map is taken from Espressif's own
+// camera_pins.h in the installed core. It carries an OV2640, which has a
+// hardware JPEG encoder, so tryBothFormats succeeds on its first attempt and
+// the board avoids the software encoding that limits the GC2145 to 7 fps.
 static const PinMap CANDIDATES[] = {
   {"S3-CAM/Freenove/S3-EYE", -1, -1, 15,  4,  5, 16, 17, 18, 12, 10,  8,  9, 11,  6,  7, 13},
+  {"AI-Thinker ESP32-CAM",   32, -1,  0, 26, 27, 35, 34, 39, 36, 21, 19, 18,  5, 25, 23, 22},
   {"XIAO ESP32S3 Sense",     -1, -1, 10, 40, 39, 48, 11, 12, 14, 16, 18, 17, 15, 38, 47, 13},
   {"ESP32-S3 alt (40/39)",   -1, -1, 40, 17, 18, 39, 41, 42, 12,  3, 14, 47, 13, 21, 38, 11},
 };

@@ -101,6 +101,39 @@ candidate fails, the board uses a layout not in the list: add it to
 `CANDIDATES`, or restore the backup and use a USB Wi-Fi adapter on the Pi
 instead.
 
+## Other boards, including the AI-Thinker ESP32-CAM
+
+`CANDIDATES` carries several layouts and `PIN_FORCE` is -1, so one build probes
+until a map both initialises and returns a frame. Supported:
+
+| Index | Board | Chip | Sensor |
+|---|---|---|---|
+| 0 | Hiwonder S3-CAM / GOOUUU / Freenove S3 / S3-EYE | ESP32-S3 | GC2145 |
+| 1 | **AI-Thinker ESP32-CAM** | classic ESP32 | OV2640 |
+| 2 | XIAO ESP32S3 Sense | ESP32-S3 | OV2640 |
+| 3 | ESP32-S3 alt (XCLK 40) | ESP32-S3 | varies |
+
+Pin numbers come from Espressif's own `camera_pins.h` in the installed core,
+not from a third-party list.
+
+**The AI-Thinker is worth having.** Its OV2640 encodes JPEG in hardware, so it
+skips the software encoding that caps the GC2145 at 7 fps, and it should manage
+VGA or better at a usable rate. It is also a classic ESP32, so it needs a
+different build target:
+
+```bash
+# AI-Thinker ESP32-CAM (classic ESP32)
+arduino-cli compile --fqbn esp32:esp32:esp32cam firmware/camera_station
+arduino-cli upload  --fqbn esp32:esp32:esp32cam -p /dev/ttyUSB0   --board-options UploadSpeed=115200 firmware/camera_station
+```
+
+Two things to know about that board. It has no USB-serial chip, so flashing
+needs an external FTDI adapter with GPIO0 pulled to ground while resetting.
+And GPIO 16 is wired to its PSRAM, so leave it alone.
+
+Once running, `/status` reports `native_jpeg: true` on an OV2640, which is the
+quick way to confirm you are getting hardware encoding.
+
 ## Build and flash
 
 Board **ESP32S3 Dev Module**, with **PSRAM enabled** — the camera needs it for
