@@ -119,9 +119,8 @@ class ArmPOC(Node):
         if not self.p['dry_run']:
             self.port = serial.Serial(self.p['serial_port'], 115200, timeout=0.3, write_timeout=0.3)
             try:
-                time.sleep(2)  # USB opening may reset ESP32.
-                self.port.reset_input_buffer()
-                self.exchange(b'PING\n', b'READY')
+                time.sleep(2)  # USB opening resets the ESP32.
+                self.handshake()
             except Exception:
                 self.port.close()
                 raise
