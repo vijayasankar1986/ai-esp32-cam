@@ -77,6 +77,8 @@ class ArmPOC(Node):
             'hold_seconds': 3.0, 'camera_stale_seconds': 8.0,
             'connect_timeout': 5.0, 'read_timeout': 10.0, 'auto_recover': True,
             'allow_manual': False, 'manual_timeout': 2.0, 'serial_timeout': 1.0,
+            'gripper_joint': 3, 'gripper_open': 120, 'gripper_closed': 60,
+            'grasp_seconds': 1.5, 'pick_enabled': False,
         }
         self.p = {k: self.declare_parameter(k, v).value for k, v in defaults.items()}
         # dynamic_typing because an empty default would otherwise be inferred as
@@ -104,6 +106,7 @@ class ArmPOC(Node):
         self.command = self.home
         self.pose = self.home_pose
         self.phase = 'idle'
+        self.pick_reach = None
         self.deadline = 0.0
         self.last_frame = 0.0
         self.started = time.monotonic()
@@ -168,6 +171,35 @@ class ArmPOC(Node):
         self.phase = 'manual'
         self.deadline = time.monotonic() + self.p['manual_timeout']
         self.last_sent = 0.0
+
+    def apply(self, pose):
+        """Set the commanded pose, validated against the joint limits."""
+        self.command = move_command(pose, self.p['min_angles'], self.p['max_angles'])
+        self.pose = list(pose)
+
+    def with_gripper(self, pose, angle):
+        """Copy a pose with the gripper joint overridden, clamped to limits."""
+        out = list(pose)
+        j = int(self.p['gripper_joint'])
+        lo, hi = int(self.p['min_angles'][j]), int(self.p['max_angles'][j])
+        out[j] = max(lo, min(hi, int(angle)))
+        return out
+
+    def begin_pick(self, u, v, now):
+        """Start a pick: approach with the gripper open, then grasp and lift.
+
+        The reach pose comes from the calibrated image-to-joint map, so the arm
+        goes where the object actually is. Only the gripper joint is driven by
+        the sequence.
+        """
+        reach = pose_from_pixel(self.model, u, v,
+                                self.p['min_angles'], self.p['max_angles'])
+        self.pick_reach = reach
+        self.apply(self.with_gripper(reach, self.p['gripper_open']))
+        self.phase = 'approach'
+        self.deadline = now + self.p['hold_seconds']
+        self.get_logger().info(
+            f'Object at ({u:.2f}, {v:.2f}); approaching {self.pose} with gripper open')
 
     def build_calibration(self):
         """Parse the flat calibration array into an image-to-joint model.
@@ -330,18 +362,21 @@ class ArmPOC(Node):
                 self.target.publish(point)
             event = self.gate.update(seen)
             if event and self.phase == 'idle' and not self.fault:
-                if self.model:
-                    self.pose = pose_from_pixel(self.model, u, v,
-                                                self.p['min_angles'], self.p['max_angles'])
-                    self.command = move_command(self.pose, self.p['min_angles'],
-                                                self.p['max_angles'])
+                if self.model and self.p['pick_enabled']:
+                    self.begin_pick(u, v, now)
+                elif self.model:
+                    self.apply(pose_from_pixel(self.model, u, v,
+                                               self.p['min_angles'],
+                                               self.p['max_angles']))
                     self.get_logger().info(
                         f'Object at ({u:.2f}, {v:.2f}); reaching {self.pose}')
+                    self.phase = 'target'
+                    self.deadline = now + self.p['hold_seconds']
                 else:
                     self.command = self.trigger_cmd
                     self.pose = self.target_pose
-                self.phase = 'target'
-                self.deadline = now + self.p['hold_seconds']
+                    self.phase = 'target'
+                    self.deadline = now + self.p['hold_seconds']
                 self.last_sent = 0.0
         if self.phase != 'idle' and now >= self.deadline and not self.fault:
             if self.phase == 'manual':
@@ -353,6 +388,27 @@ class ArmPOC(Node):
                 self.deadline = now + self.p['hold_seconds']
                 self.last_sent = 0.0
                 self.get_logger().info('Manual control released; returning home')
+            elif self.phase == 'approach':
+                # In position with the gripper open: close it on the object.
+                self.apply(self.with_gripper(self.pick_reach, self.p['gripper_closed']))
+                self.phase = 'grasp'
+                self.deadline = now + self.p['grasp_seconds']
+                self.last_sent = 0.0
+                self.get_logger().info('Closing gripper')
+            elif self.phase == 'grasp':
+                # Lift by going home, keeping the gripper closed so the object
+                # comes with it.
+                self.apply(self.with_gripper(self.home_pose, self.p['gripper_closed']))
+                self.phase = 'lift'
+                self.deadline = now + self.p['hold_seconds']
+                self.last_sent = 0.0
+                self.get_logger().info('Lifting to home with the object')
+            elif self.phase == 'lift':
+                self.apply(self.with_gripper(self.home_pose, self.p['gripper_open']))
+                self.phase = 'returning'
+                self.deadline = now + self.p['grasp_seconds']
+                self.last_sent = 0.0
+                self.get_logger().info('Releasing object')
             elif self.phase == 'target':
                 self.command = self.home
                 self.pose = self.home_pose

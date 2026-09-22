@@ -26,6 +26,15 @@ arm_poc:
     # Three non-collinear points minimum; four corners is better. Leave empty
     # to keep the original single fixed trigger_pose behaviour.
     calibration: []
+    # Pick sequence. With pick_enabled and a calibration, a detected object
+    # triggers approach with the gripper open, close, lift home, release.
+    # Without calibration the arm has no idea where the object is, so this is
+    # ignored and the fixed trigger_pose is used instead.
+    pick_enabled: false
+    gripper_joint: 3     # Index into the pose; 3 is D33 on this build
+    gripper_open: 120
+    gripper_closed: 60   # Narrow this to whatever actually grips your object
+    grasp_seconds: 1.5
     stable_frames: 3
     hold_seconds: 6.0 # Firmware steps one joint at a time on USB power, so a
                       # four-joint move takes about four times longer to finish

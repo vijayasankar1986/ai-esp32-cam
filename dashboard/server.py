@@ -33,6 +33,10 @@ ASSETS = Path(__file__).resolve().parent
 RUNTIME = Path(tempfile.mkdtemp(prefix='arm-dashboard-'))
 CONTROL = os.environ.get('ARM_DASHBOARD_CONTROL') == '1'
 JOG = {'publisher': None, 'pose': [90.0, 90.0, 90.0, 90.0]}
+# Captured calibration points: each is u, v and the four angles that reach
+# that spot. Written to a file so a teaching session survives a restart.
+CALIB = {'points': []}
+CALIB_FILE = Path.home() / 'arm_calibration.json'
 LOCK = threading.Lock()
 # Signals waiting MJPEG clients that a new frame landed, so the stream is
 # driven by arrivals rather than polling.
@@ -40,6 +44,7 @@ FRAME_READY = threading.Condition()
 STATE = {'ros': False, 'ros_error': '', 'image_count': 0, 'last_image': 0,
          'last_detection': 0, 'red': None, 'publishers': 0, 'jpeg': None,
          'joints': None, 'last_joints': 0, 'arm_node': False,
+         'target': None, 'last_target': 0,
          'test': {'status': 'not_run', 'output': '', 'finished': None}}
 
 
@@ -57,6 +62,7 @@ def ros_observer():
         from cv_bridge import CvBridge
         from rclpy.node import Node
         from rclpy.qos import qos_profile_sensor_data
+        from geometry_msgs.msg import PointStamped
         from sensor_msgs.msg import Image, JointState
         from std_msgs.msg import Bool
         rclpy.init()
@@ -79,6 +85,12 @@ def ros_observer():
             except Exception as exc:
                 with LOCK:
                     STATE['ros_error'] = str(exc)
+
+        def on_target(msg):
+            with LOCK:
+                STATE['target'] = [round(msg.point.x, 4), round(msg.point.y, 4),
+                                   round(msg.point.z, 4)]
+                STATE['last_target'] = time.monotonic()
 
         def on_detection(msg):
             with LOCK:
@@ -103,6 +115,8 @@ def ros_observer():
                 JointState, '/arm/joint_states', on_joints, 10))
             subs.append(node.create_subscription(
                 Bool, '/vision/color_detected', on_detection, 10))
+            subs.append(node.create_subscription(
+                PointStamped, '/vision/target_point', on_target, 10))
 
         subscribe()
         if CONTROL:
@@ -148,6 +162,10 @@ def status():
     now = time.monotonic()
     data['frame_age'] = round(now - data.pop('last_image'), 1) if data['last_image'] else None
     data.pop('last_image', None)
+    target_time = data.pop('last_target')
+    if not target_time or now - target_time > 3:
+        data['target'] = None
+    data['calibration'] = list(CALIB['points'])
     joint_time = data.pop('last_joints')
     if not joint_time or now - joint_time > 3:
         data['joints'] = None
@@ -294,6 +312,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.respond(403, {'error': 'Same-origin request required'})
         if self.path == '/api/jog':
             return self.handle_jog()
+        if self.path in ('/api/calibration/capture', '/api/calibration/clear'):
+            return self.handle_calibration(self.path.rsplit('/', 1)[1])
         if self.path in ('/api/node/restart', '/api/node/stop'):
             return self.handle_node(self.path.rsplit('/', 1)[1])
         if self.path != '/api/test':
@@ -329,6 +349,42 @@ class Handler(BaseHTTPRequestHandler):
         with LOCK:
             JOG['pose'] = pose
         return self.respond(200, {'pose': pose})
+
+    def handle_calibration(self, action):
+        """Capture or clear a calibration point.
+
+        A point pairs where the object appears in the frame with the joint
+        angles that reach it, so it is only meaningful when the object is
+        visible and the arm has been jogged to it.
+        """
+        if not CONTROL:
+            return self.respond(403, {'error': 'Control disabled'})
+        if action == 'clear':
+            CALIB['points'] = []
+            self.save_calibration()
+            return self.respond(200, {'points': []})
+        with LOCK:
+            target = STATE['target']
+        pose = list(JOG['pose'])
+        if not target:
+            return self.respond(409, {'error': 'No object detected; nothing to pair with'})
+        CALIB['points'].append({'u': target[0], 'v': target[1],
+                                'angles': [int(round(a)) for a in pose]})
+        self.save_calibration()
+        return self.respond(200, {'points': CALIB['points']})
+
+    def save_calibration(self):
+        """Persist points, and emit the YAML line to paste into poc.yaml."""
+        flat = []
+        for point in CALIB['points']:
+            flat += [point['u'], point['v']] + point['angles']
+        try:
+            CALIB_FILE.write_text(json.dumps(
+                {'points': CALIB['points'],
+                 'calibration_yaml': 'calibration: [' +
+                                     ', '.join(str(v) for v in flat) + ']'}, indent=2))
+        except OSError:
+            pass
 
     def handle_node(self, action):
         """Restart or stop the arm_poc node.

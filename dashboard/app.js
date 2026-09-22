@@ -28,7 +28,7 @@ function render(s){current=s;$('connection').textContent='Pi connected';$('conne
  const t=s.test, running=t.status==='running';$('run-test').disabled=running||busy;$('run-test').firstChild.textContent=running?'Test running… ':'Run system test ';
  $('test-state').textContent={not_run:'Not run this session',running:'Running · no servo commands',passed:'Passed',failed:'Needs attention'}[t.status];$('test-state').className='pill '+(t.status==='passed'?'ok':t.status==='failed'?'warn':'');
  $('test-detail').textContent=running?(t.telemetry?`${t.telemetry.frames} images processed. ${words[t.telemetry.phase]||t.telemetry.phase}.`:'Starting logic and ROS checks…'):t.status==='passed'?'Logic and ROS checks passed. Physical camera and arm remain unverified.':t.status==='failed'?'Check the output below for the failure.':'Run a test to see current results.';
- $('output').textContent=t.output||(running?'Test in progress…':'No test has been run since the dashboard started.');$('updated').textContent='Updated '+new Date().toLocaleTimeString();renderFrame();renderArm(s);renderJog(s);renderNode(s);
+ $('output').textContent=t.output||(running?'Test in progress…':'No test has been run since the dashboard started.');$('updated').textContent='Updated '+new Date().toLocaleTimeString();renderFrame();renderArm(s);renderJog(s);renderNode(s);renderCalib(s);
 }
 async function refresh(){try{const r=await fetch('/api/status',{signal:AbortSignal.timeout(5000)});if(!r.ok)throw Error(r.status);render(await r.json());}catch(e){$('connection').textContent='Pi unreachable';$('connection').className='pill warn';$('offline').hidden=false;$('run-test').disabled=true;}finally{setTimeout(refresh,1000);}}
 $('run-test').onclick=async()=>{busy=true;$('run-test').disabled=true;select('test');try{const r=await fetch('/api/test',{method:'POST',headers:{'X-Arm-Dashboard':'1'},signal:AbortSignal.timeout(5000)});if(!r.ok)throw Error((await r.json()).error||r.status);$('test-state').textContent='Starting…';}catch(e){$('test-detail').textContent='Could not start test: '+e.message;}finally{busy=false;}};
@@ -288,5 +288,36 @@ function renderNode(s){
   $('node-restart').disabled=!s.control;
   $('node-stop').disabled=!s.control||!up;
   if(!s.control)$('node-reply').textContent='control disabled';
+ }
+}
+
+/* --- Teaching pick positions -----------------------------------------------
+   Pairs where the object appears with the joint angles that reach it. Only
+   meaningful while the object is visible, so capture is disabled otherwise. */
+async function calibAction(action){
+ try{
+  const r=await fetch('/api/calibration/'+action,{method:'POST',
+   headers:{'X-Arm-Dashboard':'1'},signal:AbortSignal.timeout(6000)});
+  const j=await r.json();
+  $('calib-reply').textContent=r.ok?`${j.points.length} point(s) captured`
+                                   :('failed: '+(j.error||r.status));
+ }catch(e){$('calib-reply').textContent='failed: '+e.message;}
+}
+$('calib-capture').onclick=()=>calibAction('capture');
+$('calib-clear').onclick=()=>calibAction('clear');
+
+function renderCalib(s){
+ const pts=s.calibration||[], seen=Boolean(s.target);
+ $('calib-state').textContent=`${pts.length} point${pts.length===1?'':'s'}`;
+ $('calib-state').className='pill '+(pts.length>=3?'ok':'');
+ $('calib-capture').disabled=!s.control||!seen;
+ $('calib-clear').disabled=!s.control||!pts.length;
+ if(!s.control){$('calib-reply').textContent='control disabled';}
+ else if(!seen){$('calib-reply').textContent='no object detected — show it to the camera';}
+ if(pts.length>=3){
+  const flat=pts.flatMap(p=>[p.u,p.v,...p.angles]);
+  $('calib-yaml').textContent='calibration: ['+flat.join(', ')+']';
+ }else{
+  $('calib-yaml').textContent=pts.length?'need at least 3 points':'';
  }
 }
