@@ -27,7 +27,10 @@ KillMode=process
 Restart=on-failure
 RestartSec=3
 NoNewPrivileges=true
-PrivateTmp=true
+# No PrivateTmp: Fast DDS uses shared memory for same-host transport and needs
+# the same /tmp and /dev/shm namespace as the node. With an isolated /tmp the
+# observer discovered the publisher over UDP but never received a message, so
+# the dashboard reported a connected node publishing nothing.
 
 [Install]
 WantedBy=multi-user.target
