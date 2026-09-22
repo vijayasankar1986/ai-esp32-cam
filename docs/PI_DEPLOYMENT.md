@@ -44,6 +44,28 @@ programming only; video is Wi-Fi.
 `bbt` was added to the `dialout` group so serial access no longer needs sudo.
 This takes effect at the next login.
 
+### Controller firmware now installed
+
+`firmware/arm_controller` was flashed on 2026-09-22 (compile clean, 22% of
+program storage, hash verified) and the protocol confirmed over USB at 115200:
+
+```text
+PING                   -> READY
+MOVE 90 90 90 90       -> ERR calibration required
+MOVE 90 90 90          -> ERR format
+MOVE 200 90 90 90      -> ERR calibration required
+STOP                   -> STOPPED
+```
+
+The handshake, the malformed-input rejection and the PWM teardown all work, and
+the board refuses movement exactly as intended while `CALIBRATED` is false.
+
+Note what this does **not** prove. Because the calibration check runs before the
+range check, an out-of-range angle returns `ERR calibration required` rather
+than `ERR limits`, so joint-limit enforcement on real hardware is still
+untested. Nothing has driven a servo. Upload used 115200; this CP2102 fails
+above that, as it did on the flash read.
+
 ### Controller firmware as found
 
 The board did not ship with this project's firmware. It was running a Classic
