@@ -5,7 +5,7 @@
 # process may own the serial port, so existing nodes are killed first and the
 # kill is verified before starting a new one: two nodes on one port split each
 # other's replies and produce failures that look like controller faults.
-set -u
+# No 'set -u': ROS's setup.bash reads unset variables and would abort under it.
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LOG="${ARM_NODE_LOG:-$HOME/arm_node.log}"
 
