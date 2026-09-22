@@ -18,6 +18,12 @@ WorkingDirectory=/home/bbt/ai-esp32cam
 Environment=ARM_DASHBOARD_CONTROL=1
 ExecStartPre=/bin/sleep 5
 ExecStart=/bin/bash /home/bbt/ai-esp32cam/dashboard/start.sh
+# Kill only the server, not its whole control group. The restart button spawns
+# the arm_poc node as a child of this service, and setsid does not escape a
+# systemd cgroup, so the default control-group kill took the node down with
+# every dashboard restart: the node vanished with ExternalShutdownException and
+# the dashboard came back showing a connected system with no data.
+KillMode=process
 Restart=on-failure
 RestartSec=3
 NoNewPrivileges=true
