@@ -1,6 +1,11 @@
 arm_poc:
   ros__parameters:
-    camera_url: "" # Required: actual HTTP JPEG/MJPEG endpoint
+    # Verified from the camera firmware's own embedded page (2026-09-22):
+    #   MJPEG stream  http://<camera-ip>:81/stream   <- use this
+    #   single still  http://<camera-ip>/capture
+    # In factory AP mode <camera-ip> is 192.168.5.1. The firmware is AP-only,
+    # so the Pi must share that network to reach it. See docs/PI_DEPLOYMENT.md.
+    camera_url: "" # Required: set to the stream URL above
     dry_run: true
     serial_port: "/dev/serial/by-id/REPLACE_WITH_YOUR_CONTROLLER"
     home_pose: [90, 90, 90, 90]

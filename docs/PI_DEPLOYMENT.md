@@ -66,6 +66,55 @@ The Pi detects `HW_ESP32S3CAM_88` at full signal, and the camera's own serial bo
 
 The Pi currently uses `wlan0` for `192.168.1.9`; Ethernet is disconnected and the user has no Ethernet available. Switching that Wi-Fi interface would interrupt SSH. Its network configuration has therefore been preserved. Live integration needs either camera station-mode configuration for the existing LAN or a second Wi-Fi adapter on the Pi. The factory station-mode example uses a particular hotspot name/password; it does not establish that arbitrary router credentials can be set through the web page. Inspect the exact firmware before changing it.
 
+## Camera endpoints (verified)
+
+Taken from the camera's own firmware, not assumed. An 8 MB flash backup was
+read over USB and its embedded web page decompressed, which gives:
+
+```js
+var baseHost  = document.location.origin
+var streamUrl = baseHost + ':81'
+view.src = `${streamUrl}/stream`          // MJPEG, port 81
+view.src = `${baseHost}/capture?_cb=...`  // single JPEG, port 80
+fetch(`${baseHost}/status`)
+```
+
+| Purpose | URL | Port |
+|---|---|---|
+| MJPEG stream (use this for `camera_url`) | `http://<ip>:81/stream` | 81 |
+| Single JPEG still | `http://<ip>/capture` | 80 |
+| Sensor status JSON | `http://<ip>/status` | 80 |
+| Sensor control | `http://<ip>/control?var=<name>&val=<n>` | 80 |
+
+The stream boundary is `multipart/x-mixed-replace;boundary=123456789000000000000987654321`,
+the stock esp32-camera signature, which the node's reader already handles.
+Other endpoints present: `/bmp`, `/jpeg`, `/resolution`, `/xclk`, `/reg`, `/greg`,
+`/pll`, `/probe`, `/console`, `/uart`, `/secondary`.
+
+## Camera hardware and firmware
+
+| Property | Value |
+|---|---|
+| Chip | ESP32-S3 (QFN56) rev v0.2 |
+| PSRAM | 8 MB embedded (AP_3v3) |
+| Flash | 8 MB (mfr 0x20, dev 0x4017) |
+| MAC | `e0:72:a1:ce:d1:88` (SSID suffix `_88` derives from it) |
+| Sensor | GC2145 |
+| Built with | `arduino-lib-builder`, ESP-IDF v4.4.5, 12 Jun 2023 |
+| USB bridge | CH340 (`1a86:7523`) |
+
+The firmware is **access-point only**. Its single Wi-Fi app string is
+`WiFi AP Started`, and it generates its SSID from the MAC via
+`HW_ESP32S3CAM_%02X`. The `sta.*` names in the binary are ESP-IDF's internal
+NVS key table, present in every build, and are not evidence of station
+support. Station mode therefore requires reflashing, which needs this board's
+GC2145 pin mapping. That mapping is not yet known.
+
+A full flash backup is held outside this repository at
+`~/Documents/Arduino/hiwonder-cam-backup/hiwonder_esp32s3cam_e072a1ced188_8MB.bin`
+(sha256 `78cfbafd0ff858cb2f89ca6f19ed17ce79c29f8e9a963dcba2602a32fb718703`),
+so any reflash is reversible.
+
 Reference: [Hiwonder network modes](https://docs.hiwonder.com/projects/ESP32-S3/en/latest/docs/3.Image_Recognition_Course.html).
 
 Do not select a port or flash firmware until the physical board is identified. The camera IP/stream URL is also still required.
