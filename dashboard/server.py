@@ -90,21 +90,46 @@ def ros_observer():
                 STATE['joints'] = [round(math.degrees(a), 1) for a in msg.position]
                 STATE['last_joints'] = time.monotonic()
 
-        node.create_subscription(Image, '/camera/image_raw', on_image, qos_profile_sensor_data)
-        node.create_subscription(JointState, '/arm/joint_states', on_joints, 10)
+        subs = []
+        retry = {'at': 0.0}
+
+        def subscribe():
+            for old in subs:
+                node.destroy_subscription(old)
+            subs.clear()
+            subs.append(node.create_subscription(
+                Image, '/camera/image_raw', on_image, qos_profile_sensor_data))
+            subs.append(node.create_subscription(
+                JointState, '/arm/joint_states', on_joints, 10))
+            subs.append(node.create_subscription(
+                Bool, '/vision/color_detected', on_detection, 10))
+
+        subscribe()
         if CONTROL:
             JOG['publisher'] = node.create_publisher(JointState, '/arm/manual_pose', 10)
-        node.create_subscription(Bool, '/vision/color_detected', on_detection, 10)
-
-        def graph_arm():
-            with LOCK:
-                STATE['arm_node'] = node.count_publishers('/arm/joint_states') > 0
-
-        node.create_timer(2.0, graph_arm)
 
         def graph():
+            """Watch the graph, and resubscribe if a publisher sends nothing.
+
+            Subscriptions created before the node existed do not reliably pick
+            up a later publisher, which left the dashboard reporting a
+            connected system with no data until someone restarted it. Rebuilding
+            them means startup order no longer matters and a node restart
+            recovers on its own.
+            """
+            images = node.count_publishers('/camera/image_raw')
+            now = time.monotonic()
             with LOCK:
-                STATE['publishers'] = node.count_publishers('/camera/image_raw')
+                STATE['publishers'] = images
+                STATE['arm_node'] = node.count_publishers('/arm/joint_states') > 0
+                last = STATE['last_image']
+            starved = images and (not last or now - last > 12)
+            # Rate-limited by its own clock rather than by faking last_image,
+            # which would report a live camera when no frame had arrived.
+            if starved and now - retry['at'] > 12:
+                retry['at'] = now
+                node.get_logger().warn('Publisher present but no images; resubscribing')
+                subscribe()
 
         node.create_timer(2.0, graph)
         with LOCK:
