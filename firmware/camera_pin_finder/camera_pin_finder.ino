@@ -77,7 +77,8 @@ static bool scanBus(uint8_t sda, uint8_t scl, uint8_t xclk, bool verbose) {
     Wire.beginTransmission(addr);
     if (Wire.endTransmission() == 0) {
       Serial.printf("\n*** FOUND device 0x%02X (%s)\n", addr, sensorName(addr));
-      Serial.printf("    XCLK=GPIO%u  SDA=GPIO%u  SCL=GPIO%u\n", xclk, sda, scl);
+      if (xclk == 255) Serial.printf("    XCLK=none  SDA=GPIO%u  SCL=GPIO%u\n", sda, scl);
+      else Serial.printf("    XCLK=GPIO%u  SDA=GPIO%u  SCL=GPIO%u\n", xclk, sda, scl);
       hit = true;
     }
   }
