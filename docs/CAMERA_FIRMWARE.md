@@ -39,7 +39,35 @@ Fill in your SSID and password. `secrets.h` is gitignored; this repository is
 public, so never commit it. Leave `HOST_IP` empty for DHCP, or set it for a
 fixed address so `camera_url` never has to change.
 
-## The pin mapping problem
+## What this board turned out to be
+
+Two facts were established by measurement, since Hiwonder documents neither.
+
+**Pins.** Candidate 0 is correct: XCLK 15, SDA 4, SCL 5, D7-D0 on
+16/17/18/12/10/8/9/11, VSYNC 6, HREF 7, PCLK 13. That is the layout shared by
+the GOOUUU ESP32-S3-CAM, Freenove ESP32-S3-WROOM CAM and ESP32-S3-EYE. The
+tell was that probing it produced a complaint about pixel format rather than
+an I2C timeout, and the driver only gets that far once the sensor is actually
+answering on SCCB.
+
+**Pixel format.** The GC2145 has no hardware JPEG encoder. Most ESP32 camera
+examples assume an OV2640, which does, so asking for `PIXFORMAT_JPEG` fails:
+
+```text
+E (3183) camera: JPEG format is not supported on this sensor
+```
+
+The camera is therefore opened in RGB565 and frames are encoded with
+`frame2jpg()` in software. `/status` reports `native_jpeg: false` to make this
+visible. Software encoding costs CPU, so frame rate is lower than an OV2640
+board would give; QVGA is comfortable, larger sizes less so.
+
+`PIN_FORCE` is set to 0 to use the known-good map directly. Set it to -1 to
+probe all candidates again, which is what you want on a different board.
+
+## If the pins are ever wrong again
+
+
 
 Hiwonder does not publish this board's camera pinout, and it is not recoverable
 from the factory binary: the `camera_config_t` is built on the stack, so the

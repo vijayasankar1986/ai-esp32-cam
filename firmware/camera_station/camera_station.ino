@@ -9,10 +9,17 @@
 //   http://<ip>/capture     single JPEG
 //   http://<ip>/status      JSON health
 //
-// This board's pin mapping is not published by the vendor, so the candidate
-// maps below are probed at boot and the first one that yields a frame wins.
-// The working map is printed over serial; once known, set PIN_FORCE to its
-// index to skip probing.
+// Two things about this board were found by measurement, not documentation:
+//
+//   Pins. Hiwonder publishes no pinout. Candidate 0 below is confirmed
+//   working: probing it reached the sensor over SCCB and the driver replied
+//   about pixel format rather than timing out, which only happens once the
+//   sensor is talking.
+//
+//   Pixel format. The GC2145 has no hardware JPEG encoder, unlike the OV2640
+//   most examples assume, so requesting PIXFORMAT_JPEG fails with "JPEG
+//   format is not supported on this sensor". The camera is opened in RGB565
+//   and frames are encoded to JPEG in software instead.
 //
 // Restore the factory firmware from the full flash backup taken before this
 // was installed. See docs/CAMERA_FIRMWARE.md.
@@ -22,10 +29,12 @@
 #include <ESPmDNS.h>
 #include "esp_camera.h"
 #include "esp_http_server.h"
+#include "img_converters.h"
 #include "secrets.h"
 
-#define PIN_FORCE -1        // -1 probes every candidate; otherwise an index below.
+#define PIN_FORCE  0        // Candidate 0 is confirmed for this board; -1 probes all.
 #define MDNS_NAME  "armcam" // Reachable as armcam.local where mDNS is supported.
+#define JPEG_QUALITY 80     // Software encoder, 0-100. Higher costs CPU and bandwidth.
 
 struct PinMap {
   const char *name;
@@ -34,8 +43,8 @@ struct PinMap {
   int8_t vsync, href, pclk;
 };
 
-// Shared by GOOUUU ESP32-S3-CAM, Freenove ESP32-S3-WROOM CAM and ESP32-S3-EYE;
-// the most likely fit for this board. XIAO Sense differs and is tried second.
+// Index 0 is confirmed on the Hiwonder board; it is also the GOOUUU
+// ESP32-S3-CAM, Freenove ESP32-S3-WROOM CAM and ESP32-S3-EYE layout.
 static const PinMap CANDIDATES[] = {
   {"S3-CAM/Freenove/S3-EYE", -1, -1, 15,  4,  5, 16, 17, 18, 12, 10,  8,  9, 11,  6,  7, 13},
   {"XIAO ESP32S3 Sense",     -1, -1, 10, 40, 39, 48, 11, 12, 14, 16, 18, 17, 15, 38, 47, 13},
@@ -50,20 +59,21 @@ static const char *STREAM_PART = "Content-Type: image/jpeg\r\nContent-Length: %u
 static httpd_handle_t control_server = NULL;
 static httpd_handle_t stream_server = NULL;
 static const PinMap *active_map = NULL;
+static bool native_jpeg = false;        // true if the sensor encodes JPEG itself
 static volatile uint32_t frames_served = 0;
 
-static bool tryPinMap(const PinMap &m) {
+static bool tryPinMap(const PinMap &m, pixformat_t fmt) {
   camera_config_t c = {};
   c.pin_pwdn = m.pwdn; c.pin_reset = m.reset; c.pin_xclk = m.xclk;
   c.pin_sccb_sda = m.sda; c.pin_sccb_scl = m.scl;
   c.pin_d7 = m.d7; c.pin_d6 = m.d6; c.pin_d5 = m.d5; c.pin_d4 = m.d4;
   c.pin_d3 = m.d3; c.pin_d2 = m.d2; c.pin_d1 = m.d1; c.pin_d0 = m.d0;
   c.pin_vsync = m.vsync; c.pin_href = m.href; c.pin_pclk = m.pclk;
-  c.xclk_freq_hz = 20000000;
+  c.xclk_freq_hz = 20000000;            // GC2145 tops out at 20 MHz.
   c.ledc_timer = LEDC_TIMER_0; c.ledc_channel = LEDC_CHANNEL_0;
-  c.pixel_format = PIXFORMAT_JPEG;
-  c.frame_size = FRAMESIZE_QVGA;   // Matches the factory default; raise once stable.
-  c.jpeg_quality = 12;
+  c.pixel_format = fmt;
+  c.frame_size = FRAMESIZE_QVGA;        // Matches the factory default.
+  c.jpeg_quality = 12;                  // Only used when the sensor does JPEG.
   c.fb_count = psramFound() ? 2 : 1;
   c.fb_location = psramFound() ? CAMERA_FB_IN_PSRAM : CAMERA_FB_IN_DRAM;
   c.grab_mode = CAMERA_GRAB_LATEST;
@@ -77,22 +87,41 @@ static bool tryPinMap(const PinMap &m) {
     return false;
   }
   esp_camera_fb_return(fb);
+  native_jpeg = (fmt == PIXFORMAT_JPEG);
   return true;
+}
+
+// Try the sensor's own JPEG first, since it is far cheaper, then fall back to
+// RGB565 with software encoding for sensors like the GC2145 that lack it.
+static bool tryBothFormats(const PinMap &m) {
+  if (tryPinMap(m, PIXFORMAT_JPEG)) return true;
+  return tryPinMap(m, PIXFORMAT_RGB565);
+}
+
+static void reportSensor() {
+  sensor_t *s = esp_camera_sensor_get();
+  if (s) Serial.printf("Sensor PID 0x%04x (GC2145 is 0x2145)\n", s->id.PID);
+  Serial.printf("JPEG source: %s\n", native_jpeg ? "sensor hardware" : "software encoder");
 }
 
 static bool startCamera() {
   if (PIN_FORCE >= 0 && PIN_FORCE < (int)CANDIDATE_COUNT) {
-    if (tryPinMap(CANDIDATES[PIN_FORCE])) { active_map = &CANDIDATES[PIN_FORCE]; return true; }
-    Serial.printf("Forced pin map %d failed\n", PIN_FORCE);
+    Serial.printf("Using pin map %d: %s ... ", PIN_FORCE, CANDIDATES[PIN_FORCE].name);
+    if (tryBothFormats(CANDIDATES[PIN_FORCE])) {
+      Serial.println("OK");
+      active_map = &CANDIDATES[PIN_FORCE];
+      reportSensor();
+      return true;
+    }
+    Serial.println("failed; set PIN_FORCE to -1 to probe every candidate");
     return false;
   }
   for (size_t i = 0; i < CANDIDATE_COUNT; ++i) {
     Serial.printf("Probing pin map %u: %s ... ", (unsigned)i, CANDIDATES[i].name);
-    if (tryPinMap(CANDIDATES[i])) {
+    if (tryBothFormats(CANDIDATES[i])) {
       Serial.println("OK");
       active_map = &CANDIDATES[i];
-      sensor_t *s = esp_camera_sensor_get();
-      if (s) Serial.printf("Sensor PID 0x%04x (GC2145 is 0x2145)\n", s->id.PID);
+      reportSensor();
       Serial.printf("Working map index %u -- set PIN_FORCE to skip probing\n", (unsigned)i);
       return true;
     }
@@ -102,22 +131,42 @@ static bool startCamera() {
   return false;
 }
 
-static esp_err_t captureHandler(httpd_req_t *req) {
+// Hands back a JPEG for the current frame. When the sensor cannot encode, the
+// RGB565 buffer is converted here and *owned* is set so the caller frees it.
+static bool grabJpeg(camera_fb_t **fb_out, uint8_t **buf, size_t *len, bool *owned) {
   camera_fb_t *fb = esp_camera_fb_get();
-  if (!fb) return httpd_resp_send_500(req);
+  if (!fb) return false;
+  *fb_out = fb;
+  if (native_jpeg) {
+    *buf = fb->buf; *len = fb->len; *owned = false;
+    return true;
+  }
+  if (!frame2jpg(fb, JPEG_QUALITY, buf, len)) {
+    esp_camera_fb_return(fb);
+    return false;
+  }
+  *owned = true;
+  return true;
+}
+
+static esp_err_t captureHandler(httpd_req_t *req) {
+  camera_fb_t *fb = NULL; uint8_t *buf = NULL; size_t len = 0; bool owned = false;
+  if (!grabJpeg(&fb, &buf, &len, &owned)) return httpd_resp_send_500(req);
   httpd_resp_set_type(req, "image/jpeg");
   httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
-  esp_err_t r = httpd_resp_send(req, (const char *)fb->buf, fb->len);
+  esp_err_t r = httpd_resp_send(req, (const char *)buf, len);
+  if (owned) free(buf);
   esp_camera_fb_return(fb);
   return r;
 }
 
 static esp_err_t statusHandler(httpd_req_t *req) {
-  char buf[256];
+  char buf[320];
   int n = snprintf(buf, sizeof(buf),
-                   "{\"pin_map\":\"%s\",\"ip\":\"%s\",\"rssi\":%d,"
-                   "\"frames_served\":%u,\"psram\":%s,\"heap\":%u}",
+                   "{\"pin_map\":\"%s\",\"camera\":%s,\"native_jpeg\":%s,\"ip\":\"%s\","
+                   "\"rssi\":%d,\"frames_served\":%u,\"psram\":%s,\"heap\":%u}",
                    active_map ? active_map->name : "none",
+                   active_map ? "true" : "false", native_jpeg ? "true" : "false",
                    WiFi.localIP().toString().c_str(), (int)WiFi.RSSI(),
                    (unsigned)frames_served, psramFound() ? "true" : "false",
                    (unsigned)ESP.getFreeHeap());
@@ -132,12 +181,13 @@ static esp_err_t streamHandler(httpd_req_t *req) {
   httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
   char part[80];
   while (true) {
-    camera_fb_t *fb = esp_camera_fb_get();
-    if (!fb) { res = ESP_FAIL; break; }
-    size_t len = snprintf(part, sizeof(part), STREAM_PART, (unsigned)fb->len);
+    camera_fb_t *fb = NULL; uint8_t *buf = NULL; size_t len = 0; bool owned = false;
+    if (!grabJpeg(&fb, &buf, &len, &owned)) { res = ESP_FAIL; break; }
+    size_t hlen = snprintf(part, sizeof(part), STREAM_PART, (unsigned)len);
     res = httpd_resp_send_chunk(req, STREAM_BOUNDARY, strlen(STREAM_BOUNDARY));
-    if (res == ESP_OK) res = httpd_resp_send_chunk(req, part, len);
-    if (res == ESP_OK) res = httpd_resp_send_chunk(req, (const char *)fb->buf, fb->len);
+    if (res == ESP_OK) res = httpd_resp_send_chunk(req, part, hlen);
+    if (res == ESP_OK) res = httpd_resp_send_chunk(req, (const char *)buf, len);
+    if (owned) free(buf);
     esp_camera_fb_return(fb);
     if (res != ESP_OK) break;   // Client disconnected.
     ++frames_served;
