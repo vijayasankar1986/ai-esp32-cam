@@ -269,6 +269,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.respond(403, {'error': 'Same-origin request required'})
         if self.path == '/api/jog':
             return self.handle_jog()
+        if self.path in ('/api/node/restart', '/api/node/stop'):
+            return self.handle_node(self.path.rsplit('/', 1)[1])
         if self.path != '/api/test':
             return self.respond(404, {'error': 'Not found'})
         with LOCK:
@@ -302,6 +304,27 @@ class Handler(BaseHTTPRequestHandler):
         with LOCK:
             JOG['pose'] = pose
         return self.respond(200, {'pose': pose})
+
+    def handle_node(self, action):
+        """Restart or stop the arm_poc node.
+
+        Gated behind the same control flag as jogging, because restarting the
+        node reopens the serial port and commands home, which moves the arm.
+        The script does the killing and waiting; doing it here would block the
+        HTTP thread for seconds.
+        """
+        if not CONTROL:
+            return self.respond(403, {'error': 'Control disabled'})
+        script = ASSETS / 'run_node.sh'
+        try:
+            done = subprocess.run(['/bin/bash', str(script), action],
+                                  capture_output=True, text=True, timeout=30)
+        except subprocess.TimeoutExpired:
+            return self.respond(504, {'error': 'Restart timed out'})
+        output = (done.stdout + done.stderr).strip()
+        if done.returncode:
+            return self.respond(500, {'error': output or 'restart failed'})
+        return self.respond(200, {'status': action, 'detail': output})
 
     def log_message(self, *args):
         pass

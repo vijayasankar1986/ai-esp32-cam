@@ -5,7 +5,7 @@ arm_poc:
     #   single still  http://<camera-ip>/capture
     # In factory AP mode <camera-ip> is 192.168.5.1. The firmware is AP-only,
     # so the Pi must share that network to reach it. See docs/PI_DEPLOYMENT.md.
-    camera_url: "" # Required: set to the stream URL above
+    camera_url: "http://192.168.1.10/capture"
     # HARDWARE MODE, set at the operator's request. The node opens the serial
     # port and commands home on startup, so the arm moves as soon as it runs.
     # Set true to go back to observing only.

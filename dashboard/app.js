@@ -28,7 +28,7 @@ function render(s){current=s;$('connection').textContent='Pi connected';$('conne
  const t=s.test, running=t.status==='running';$('run-test').disabled=running||busy;$('run-test').firstChild.textContent=running?'Test running… ':'Run system test ';
  $('test-state').textContent={not_run:'Not run this session',running:'Running · no servo commands',passed:'Passed',failed:'Needs attention'}[t.status];$('test-state').className='pill '+(t.status==='passed'?'ok':t.status==='failed'?'warn':'');
  $('test-detail').textContent=running?(t.telemetry?`${t.telemetry.frames} images processed. ${words[t.telemetry.phase]||t.telemetry.phase}.`:'Starting logic and ROS checks…'):t.status==='passed'?'Logic and ROS checks passed. Physical camera and arm remain unverified.':t.status==='failed'?'Check the output below for the failure.':'Run a test to see current results.';
- $('output').textContent=t.output||(running?'Test in progress…':'No test has been run since the dashboard started.');$('updated').textContent='Updated '+new Date().toLocaleTimeString();renderFrame();renderArm(s);renderJog(s);
+ $('output').textContent=t.output||(running?'Test in progress…':'No test has been run since the dashboard started.');$('updated').textContent='Updated '+new Date().toLocaleTimeString();renderFrame();renderArm(s);renderJog(s);renderNode(s);
 }
 async function refresh(){try{const r=await fetch('/api/status',{signal:AbortSignal.timeout(5000)});if(!r.ok)throw Error(r.status);render(await r.json());}catch(e){$('connection').textContent='Pi unreachable';$('connection').className='pill warn';$('offline').hidden=false;$('run-test').disabled=true;}finally{setTimeout(refresh,1000);}}
 $('run-test').onclick=async()=>{busy=true;$('run-test').disabled=true;select('test');try{const r=await fetch('/api/test',{method:'POST',headers:{'X-Arm-Dashboard':'1'},signal:AbortSignal.timeout(5000)});if(!r.ok)throw Error((await r.json()).error||r.status);$('test-state').textContent='Starting…';}catch(e){$('test-detail').textContent='Could not start test: '+e.message;}finally{busy=false;}};
@@ -258,3 +258,35 @@ addEventListener('keydown',e=>{
 });
 addEventListener('keyup',e=>{held.delete(e.key.toLowerCase());});
 addEventListener('blur',()=>held.clear());   // leaving the tab must stop motion
+
+/* --- Node control ----------------------------------------------------------
+   Restarting reopens the serial port and commands home, so it moves the arm.
+   Buttons disable while a request is in flight: a second restart arriving
+   mid-kill would race the first for the port. */
+let nodeBusy=false;
+async function nodeAction(action){
+ if(nodeBusy)return;
+ nodeBusy=true;
+ $('node-restart').disabled=true;$('node-stop').disabled=true;
+ $('node-reply').textContent=action==='restart'?'restarting…':'stopping…';
+ try{
+  const r=await fetch('/api/node/'+action,{method:'POST',
+   headers:{'X-Arm-Dashboard':'1'},signal:AbortSignal.timeout(35000)});
+  const j=await r.json();
+  $('node-reply').textContent=r.ok?(j.detail||j.status):('failed: '+(j.error||r.status));
+ }catch(e){$('node-reply').textContent='failed: '+e.message;}
+ finally{nodeBusy=false;}
+}
+$('node-restart').onclick=()=>nodeAction('restart');
+$('node-stop').onclick=()=>nodeAction('stop');
+
+function renderNode(s){
+ const up=Boolean(s.arm_node);
+ $('node-state').textContent=up?'arm_poc running':'arm_poc not running';
+ $('node-state').className='pill '+(up?'ok':'warn');
+ if(!nodeBusy){
+  $('node-restart').disabled=!s.control;
+  $('node-stop').disabled=!s.control||!up;
+  if(!s.control)$('node-reply').textContent='control disabled';
+ }
+}
