@@ -36,6 +36,8 @@ JOG = {'publisher': None, 'pose': [90.0, 90.0, 90.0, 90.0]}
 # Captured calibration points: each is u, v and the four angles that reach
 # that spot. Written to a file so a teaching session survives a restart.
 CALIB = {'points': []}
+# Gripper travel, captured from the jog position rather than guessed.
+GRIPPER = {'open': None, 'closed': None, 'joint': 3}
 CALIB_FILE = Path.home() / 'arm_calibration.json'
 LOCK = threading.Lock()
 # Signals waiting MJPEG clients that a new frame landed, so the stream is
@@ -315,6 +317,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.handle_jog()
         if self.path in ('/api/calibration/capture', '/api/calibration/clear'):
             return self.handle_calibration(self.path.rsplit('/', 1)[1])
+        if self.path in ('/api/gripper/open', '/api/gripper/closed'):
+            return self.handle_gripper(self.path.rsplit('/', 1)[1])
         if self.path in ('/api/node/restart', '/api/node/stop'):
             return self.handle_node(self.path.rsplit('/', 1)[1])
         if self.path != '/api/test':
