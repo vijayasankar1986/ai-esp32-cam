@@ -203,7 +203,53 @@ function renderJog(s){
  document.querySelector('.jog-panel').classList.toggle('locked',!jogOn);
  for(const b of document.querySelectorAll('.jogs button'))b.disabled=!jogOn;
  $('jog-home').disabled=!jogOn;$('jog-release').disabled=!jogOn;
+ $('jog-keys').textContent=jogOn?keyLabel():'';
  if(!jogOn)$('jog-note').textContent='Control is disabled. Start the dashboard with '
   +'ARM_DASHBOARD_CONTROL=1 and the node with allow_manual:=true. Off by default because '
   +'this server has no authentication.';
 }
+
+/* --- Keyboard jogging -------------------------------------------------------
+   Hold a key to jog continuously, release to stop. Keys are deliberately away
+   from 'f' (fullscreen). Repeats send absolute poses at a fixed rate rather
+   than one request per keypress, so holding a key cannot flood the node. */
+const KEYMAP={
+ arrowleft:[0,-1], arrowright:[0,1],   // base
+ arrowup:[1,1],    arrowdown:[1,-1],   // shoulder
+ w:[2,1],          s:[2,-1],           // elbow
+ a:[3,-1],         d:[3,1],            // gripper
+};
+const held=new Map();
+let repeatTimer=null, lastKeyJoint=null;
+
+function keyLabel(){
+ const rows=[['← →','BASE'],['↑ ↓','SHOULDER'],['W S','ELBOW'],
+             ['A D','GRIPPER'],['H','home'],['Esc','release']];
+ return rows.map(([k,v])=>`${k} ${v}`).join('   ·   ');
+}
+function pumpKeys(){
+ if(!held.size){clearInterval(repeatTimer);repeatTimer=null;return;}
+ for(const [joint,dir] of held.values()){
+  jogPose[joint]=Math.max(JOG_MIN,Math.min(JOG_MAX,jogPose[joint]+dir));
+  $('jogv'+joint).textContent=jogPose[joint]+'°';
+  lastKeyJoint=joint;
+ }
+ sendJog();
+}
+function typing(){return /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName);}
+addEventListener('keydown',e=>{
+ if(typing())return;
+ const k=e.key.toLowerCase();
+ if(k==='h'&&jogOn){e.preventDefault();$('jog-home').click();return;}
+ if(k==='escape'&&jogOn){e.preventDefault();$('jog-release').click();return;}
+ const m=KEYMAP[k];
+ if(!m)return;
+ e.preventDefault();
+ if(!jogOn){$('jog-reply').textContent='control is disabled';return;}
+ if(held.has(k))return;                  // ignore the OS auto-repeat
+ held.set(k,m);
+ if(!repeatTimer){pumpKeys();repeatTimer=setInterval(pumpKeys,120);}
+ startHold();
+});
+addEventListener('keyup',e=>{held.delete(e.key.toLowerCase());});
+addEventListener('blur',()=>held.clear());   // leaving the tab must stop motion

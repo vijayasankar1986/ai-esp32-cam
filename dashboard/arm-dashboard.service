@@ -6,6 +6,11 @@ After=network.target
 Type=simple
 User=bbt
 WorkingDirectory=/home/bbt/ai-esp32cam
+# Manual jog from the dashboard. This server has no authentication and binds
+# every interface, so with this set anyone who can reach port 8080 can move the
+# arm. The node must ALSO run with allow_manual:=true before anything moves.
+# Comment this line out to make the dashboard observe-only again.
+Environment=ARM_DASHBOARD_CONTROL=1
 ExecStart=/bin/bash /home/bbt/ai-esp32cam/dashboard/start.sh
 Restart=on-failure
 RestartSec=3

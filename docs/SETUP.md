@@ -54,6 +54,32 @@ STOP                 -> STOPPED
 
 Invalid or uncalibrated moves return `ERR ...`. `STOP` disables PWM and holding torque. The ROS controller repeats targets every 0.5 seconds; firmware disables PWM after 2 seconds without an accepted MOVE. USB reconnection is deliberately manual: restart the ROS node after investigating a disconnect.
 
+## Dashboard as a service
+
+```bash
+sudo cp ~/ai-esp32cam/dashboard/arm-dashboard.service /etc/systemd/system/
+sudo systemctl enable --now arm-dashboard
+```
+
+The unit sets `ARM_DASHBOARD_CONTROL=1`, so the jog panel survives a reboot.
+Comment that line out to return the dashboard to observe-only. Control still
+needs `allow_manual:=true` on the node as well; either one alone moves nothing.
+
+Jog with the buttons or the keyboard:
+
+| Key | Joint |
+|---|---|
+| Left / Right arrow | base |
+| Up / Down arrow | shoulder |
+| `W` / `S` | elbow |
+| `A` / `D` | gripper |
+| `H` | all joints home |
+| `Esc` | release, node returns home |
+| `F` | fullscreen camera |
+
+Hold a key to jog continuously. Releasing it, leaving the tab or pressing
+`Esc` stops refreshing, and the node takes the arm home once the pose expires.
+
 ## 5. Enable movement
 
 Set calibrated `home_pose`, `trigger_pose`, `min_angles`, and `max_angles` in YAML. With clear workspace, supported arm, and physical power switch accessible, change `dry_run` to `false` and restart. Hardware mode commands home at startup. Three consecutive colour-positive frames trigger the target; after `hold_seconds` it returns home. Three negative frames are required before another trigger. Keep the object removed while the arm returns home.
