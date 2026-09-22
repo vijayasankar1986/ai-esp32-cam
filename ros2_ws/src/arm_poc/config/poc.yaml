@@ -13,7 +13,14 @@ arm_poc:
     min_angles: [80, 80, 80, 80]
     max_angles: [100, 100, 100, 100]
     target_color: "red" # red, green, blue, yellow, orange or purple
-    color_fraction: 0.05 # Fraction of the frame that must match the colour
+    color_fraction: 0.05 # Fraction of the frame the largest matching blob must fill
+    # Image-to-joint calibration: six numbers per point, u v then four angles.
+    # u and v are the object centre in the frame, 0..1, left-to-right and
+    # top-to-bottom. Put the object somewhere, read u and v from
+    # /vision/target_point, jog the arm to reach it, record its angles, repeat.
+    # Three non-collinear points minimum; four corners is better. Leave empty
+    # to keep the original single fixed trigger_pose behaviour.
+    calibration: []
     stable_frames: 3
     hold_seconds: 3.0
     camera_stale_seconds: 3.0

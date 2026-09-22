@@ -9,11 +9,14 @@ import serial
 import rclpy
 from cv_bridge import CvBridge
 from rclpy.node import Node
+from rcl_interfaces.msg import ParameterDescriptor, ParameterType
 from rclpy.qos import qos_profile_sensor_data
+from geometry_msgs.msg import PointStamped
 from sensor_msgs.msg import Image, JointState
 from std_msgs.msg import Bool
 
-from .logic import DetectionGate, color_ranges, move_command
+from .logic import (DetectionGate, color_ranges, fit_pixel_to_joints,
+                    move_command, pose_from_pixel)
 
 
 class CameraReader:
@@ -73,18 +76,22 @@ class ArmPOC(Node):
             'hold_seconds': 3.0, 'camera_stale_seconds': 3.0,
         }
         self.p = {k: self.declare_parameter(k, v).value for k, v in defaults.items()}
+        self.p['calibration'] = self.declare_parameter(
+            'calibration', [],
+            ParameterDescriptor(type=ParameterType.PARAMETER_DOUBLE_ARRAY)).value or []
         if not self.p['camera_url'].startswith(('http://', 'https://')):
             raise ValueError('Set camera_url to the actual HTTP JPEG/MJPEG endpoint')
         if not 0 < self.p['color_fraction'] <= 1:
             raise ValueError('color_fraction must be in (0, 1]')
         self.ranges = color_ranges(self.p['target_color'])
+        self.model = self.build_calibration()
         if not all(np.isfinite(self.p[k]) and self.p[k] > 0 for k in
                    ('hold_seconds', 'camera_stale_seconds')):
             raise ValueError('Timeouts must be finite and positive')
         self.home_pose = [int(a) for a in self.p['home_pose']]
         self.target_pose = [int(a) for a in self.p['trigger_pose']]
         self.home = move_command(self.home_pose, self.p['min_angles'], self.p['max_angles'])
-        self.target = move_command(self.target_pose, self.p['min_angles'], self.p['max_angles'])
+        self.trigger_cmd = move_command(self.target_pose, self.p['min_angles'], self.p['max_angles'])
         self.gate = DetectionGate(self.p['stable_frames'])
         self.port = None
         self.camera = None
@@ -100,6 +107,7 @@ class ArmPOC(Node):
         self.images = self.create_publisher(Image, '/camera/image_raw', qos_profile_sensor_data)
         self.detected = self.create_publisher(Bool, '/vision/color_detected', 10)
         self.joints = self.create_publisher(JointState, '/arm/joint_states', 10)
+        self.target = self.create_publisher(PointStamped, '/vision/target_point', 10)
         if not self.p['dry_run']:
             self.port = serial.Serial(self.p['serial_port'], 115200, timeout=0.3, write_timeout=0.3)
             try:
@@ -115,6 +123,41 @@ class ArmPOC(Node):
         self.get_logger().info(
             ('Dry run enabled' if self.p['dry_run'] else 'Hardware mode: commanding home')
             + f", tracking {self.p['target_color']}")
+
+    def build_calibration(self):
+        """Parse the flat calibration array into an image-to-joint model.
+
+        Empty means uncalibrated, in which case the node keeps the original
+        behaviour of commanding one fixed trigger pose.
+        """
+        flat = list(self.p['calibration'])
+        if not flat:
+            self.get_logger().info('No calibration: using the fixed trigger pose')
+            return None
+        if len(flat) % 6:
+            raise ValueError('calibration needs six numbers per point: u, v and four angles')
+        samples = [(flat[i], flat[i + 1], flat[i + 2:i + 6]) for i in range(0, len(flat), 6)]
+        for _, _, angles in samples:
+            move_command(angles, self.p['min_angles'], self.p['max_angles'])
+        model = fit_pixel_to_joints(samples)
+        self.get_logger().info(f'Calibrated from {len(samples)} points: reaching for the object')
+        return model
+
+    def locate(self, mask):
+        """Largest matching blob as (fraction of frame, u, v).
+
+        The largest connected blob is used rather than every matching pixel, so
+        scattered noise of the right hue cannot masquerade as an object and the
+        centroid belongs to one thing rather than the average of several.
+        """
+        count, _, stats, centroids = cv2.connectedComponentsWithStats(mask, 8)
+        if count < 2:
+            return 0.0, 0.0, 0.0
+        index = 1 + int(np.argmax(stats[1:, cv2.CC_STAT_AREA]))
+        area = float(stats[index, cv2.CC_STAT_AREA])
+        cx, cy = centroids[index]
+        height, width = mask.shape[:2]
+        return area / mask.size, cx / width, cy / height
 
     def exchange(self, command, expected):
         self.port.write(command)
@@ -153,16 +196,30 @@ class ArmPOC(Node):
             for low, high in self.ranges:
                 band = cv2.inRange(hsv, low, high)
                 mask = band if mask is None else (mask | band)
-            seen = bool(np.count_nonzero(mask) / mask.size >= self.p['color_fraction'])
+            fraction, u, v = self.locate(mask)
+            seen = bool(fraction >= self.p['color_fraction'])
             self.detected.publish(Bool(data=seen))
+            if seen:
+                point = PointStamped()
+                point.header.stamp = message.header.stamp
+                point.header.frame_id = 'camera_optical_frame'
+                point.point.x, point.point.y, point.point.z = u, v, fraction
+                self.target.publish(point)
             event = self.gate.update(seen)
             if event and self.phase == 'idle':
-                self.command = self.target
-                self.pose = self.target_pose
+                if self.model:
+                    self.pose = pose_from_pixel(self.model, u, v,
+                                                self.p['min_angles'], self.p['max_angles'])
+                    self.command = move_command(self.pose, self.p['min_angles'],
+                                                self.p['max_angles'])
+                    self.get_logger().info(
+                        f'Object at ({u:.2f}, {v:.2f}); reaching {self.pose}')
+                else:
+                    self.command = self.trigger_cmd
+                    self.pose = self.target_pose
                 self.phase = 'target'
                 self.deadline = now + self.p['hold_seconds']
                 self.last_sent = 0.0
-                self.get_logger().info(f"{self.p['target_color'].capitalize()} detected: trigger pose")
         if self.phase != 'idle' and now >= self.deadline:
             if self.phase == 'target':
                 self.command = self.home

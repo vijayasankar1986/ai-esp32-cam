@@ -3,7 +3,8 @@ import sys
 import unittest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / 'ros2_ws/src/arm_poc'))
-from arm_poc.logic import COLOR_RANGES, DetectionGate, color_ranges, move_command
+from arm_poc.logic import (COLOR_RANGES, DetectionGate, color_ranges,
+                           fit_pixel_to_joints, move_command, pose_from_pixel)
 
 
 class LogicTests(unittest.TestCase):
@@ -51,6 +52,39 @@ class ColorTests(unittest.TestCase):
                 for i, ceiling in enumerate((179, 255, 255)):
                     self.assertGreaterEqual(low[i], 0, name)
                     self.assertLessEqual(high[i], ceiling, name)
+
+
+SQUARE = [(0.0, 0.0, [80, 80, 80, 80]), (1.0, 0.0, [100, 80, 90, 80]),
+          (0.0, 1.0, [80, 100, 80, 90]), (1.0, 1.0, [100, 100, 90, 90])]
+
+
+class CalibrationTests(unittest.TestCase):
+    def test_corners_reproduce_their_samples(self):
+        model = fit_pixel_to_joints(SQUARE)
+        for u, v, angles in SQUARE:
+            self.assertEqual(pose_from_pixel(model, u, v, [80]*4, [100]*4), angles)
+
+    def test_centre_interpolates(self):
+        model = fit_pixel_to_joints(SQUARE)
+        self.assertEqual(pose_from_pixel(model, 0.5, 0.5, [80]*4, [100]*4), [90, 90, 85, 85])
+
+    def test_extrapolation_is_clamped_to_limits(self):
+        model = fit_pixel_to_joints(SQUARE)
+        for u, v in ((5.0, 5.0), (-4.0, -4.0)):
+            for angle, lo, hi in zip(pose_from_pixel(model, u, v, [80]*4, [100]*4),
+                                     [80]*4, [100]*4):
+                self.assertTrue(lo <= angle <= hi)
+
+    def test_reject_degenerate_calibration(self):
+        collinear = [(0.0, 0.0, [90]*4), (0.5, 0.5, [90]*4), (1.0, 1.0, [90]*4)]
+        for bad in (SQUARE[:2], collinear):
+            with self.assertRaises(ValueError):
+                fit_pixel_to_joints(bad)
+
+    def test_reject_out_of_range_or_malformed_points(self):
+        for bad in ([(0.0, 0.0, [90]*3)] + SQUARE[1:], [(1.5, 0.0, [90]*4)] + SQUARE[1:]):
+            with self.assertRaises(ValueError):
+                fit_pixel_to_joints(bad)
 
 
 if __name__ == '__main__':

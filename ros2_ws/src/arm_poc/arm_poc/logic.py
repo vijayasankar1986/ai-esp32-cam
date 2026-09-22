@@ -54,3 +54,64 @@ def color_ranges(name):
         raise ValueError(
             'Unknown colour %r; choose one of %s' % (name, ', '.join(sorted(COLOR_RANGES))))
     return COLOR_RANGES[key]
+
+
+def _solve3(a, b):
+    """Gaussian elimination with partial pivoting for a 3x3 system."""
+    m = [row[:] + [rhs] for row, rhs in zip(a, b)]
+    for col in range(3):
+        pivot = max(range(col, 3), key=lambda r: abs(m[r][col]))
+        if abs(m[pivot][col]) < 1e-9:
+            raise ValueError('Calibration points are collinear or coincident')
+        m[col], m[pivot] = m[pivot], m[col]
+        for r in range(3):
+            if r == col:
+                continue
+            f = m[r][col] / m[col][col]
+            for c in range(col, 4):
+                m[r][c] -= f * m[col][c]
+    return [m[i][3] / m[i][i] for i in range(3)]
+
+
+def fit_pixel_to_joints(samples):
+    """Least-squares affine map from image position to each joint angle.
+
+    Each sample is (u, v, [four angles]) where u and v are the object's
+    position in the frame, normalised to 0..1. Fits angle = a*u + b*v + c per
+    joint, which assumes the objects lie roughly in a plane and the camera does
+    not move. Both hold for a fixed-base arm watching a table; neither holds if
+    the camera is mounted on the moving part.
+
+    At least three non-collinear samples are required.
+    """
+    if len(samples) < 3:
+        raise ValueError('Need at least three calibration points, got %d' % len(samples))
+    for u, v, angles in samples:
+        if not (0 <= u <= 1 and 0 <= v <= 1):
+            raise ValueError('Calibration u and v must be normalised to 0..1')
+        if len(angles) != 4:
+            raise ValueError('Each calibration point needs exactly four angles')
+    # Normal equations for [u, v, 1] against each joint.
+    basis = [(u, v, 1.0) for u, v, _ in samples]
+    ata = [[sum(p[i] * p[j] for p in basis) for j in range(3)] for i in range(3)]
+    model = []
+    for joint in range(4):
+        atb = [sum(p[i] * s[2][joint] for p, s in zip(basis, samples)) for i in range(3)]
+        model.append(tuple(_solve3([row[:] for row in ata], atb)))
+    return model
+
+
+def pose_from_pixel(model, u, v, lower, upper):
+    """Joint angles for an object seen at (u, v), clamped to the safe limits.
+
+    Clamping is deliberate: an extrapolated fit outside the calibrated area can
+    ask for angles the mechanism cannot reach, and the limits are the last line
+    of defence before the command is sent.
+    """
+    if len(model) != 4:
+        raise ValueError('Model must cover four joints')
+    pose = []
+    for (a, b, c), lo, hi in zip(model, lower, upper):
+        angle = int(round(a * u + b * v + c))
+        pose.append(max(int(lo), min(int(hi), angle)))
+    return pose
