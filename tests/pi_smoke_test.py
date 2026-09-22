@@ -48,7 +48,7 @@ try:
     node = ArmPOC()
     images, detections, joints, phases = [], [], [], set()
     image_sub = node.create_subscription(Image, '/camera/image_raw', images.append, qos_profile_sensor_data)
-    detection_sub = node.create_subscription(Bool, '/vision/red_detected', lambda msg: detections.append(msg.data), 10)
+    detection_sub = node.create_subscription(Bool, '/vision/color_detected', lambda msg: detections.append(msg.data), 10)
     joint_sub = node.create_subscription(JointState, '/arm/joint_states', joints.append, 10)
 
     def spin_for(seconds):

@@ -1,0 +1,219 @@
+// Station-mode camera firmware for the Hiwonder ESP32-S3 CAM (GC2145).
+//
+// Replaces the factory access-point firmware so the camera joins the same
+// Wi-Fi as the Raspberry Pi, removing the need for a second network or a
+// second Wi-Fi adapter. Endpoints match what the factory firmware served, so
+// the ROS node needs no change:
+//
+//   http://<ip>:81/stream   MJPEG, multipart/x-mixed-replace
+//   http://<ip>/capture     single JPEG
+//   http://<ip>/status      JSON health
+//
+// This board's pin mapping is not published by the vendor, so the candidate
+// maps below are probed at boot and the first one that yields a frame wins.
+// The working map is printed over serial; once known, set PIN_FORCE to its
+// index to skip probing.
+//
+// Restore the factory firmware from the full flash backup taken before this
+// was installed. See docs/CAMERA_FIRMWARE.md.
+
+#include <Arduino.h>
+#include <WiFi.h>
+#include <ESPmDNS.h>
+#include "esp_camera.h"
+#include "esp_http_server.h"
+#include "secrets.h"
+
+#define PIN_FORCE -1        // -1 probes every candidate; otherwise an index below.
+#define MDNS_NAME  "armcam" // Reachable as armcam.local where mDNS is supported.
+
+struct PinMap {
+  const char *name;
+  int8_t pwdn, reset, xclk, sda, scl;
+  int8_t d7, d6, d5, d4, d3, d2, d1, d0;
+  int8_t vsync, href, pclk;
+};
+
+// Shared by GOOUUU ESP32-S3-CAM, Freenove ESP32-S3-WROOM CAM and ESP32-S3-EYE;
+// the most likely fit for this board. XIAO Sense differs and is tried second.
+static const PinMap CANDIDATES[] = {
+  {"S3-CAM/Freenove/S3-EYE", -1, -1, 15,  4,  5, 16, 17, 18, 12, 10,  8,  9, 11,  6,  7, 13},
+  {"XIAO ESP32S3 Sense",     -1, -1, 10, 40, 39, 48, 11, 12, 14, 16, 18, 17, 15, 38, 47, 13},
+  {"ESP32-S3 alt (40/39)",   -1, -1, 40, 17, 18, 39, 41, 42, 12,  3, 14, 47, 13, 21, 38, 11},
+};
+static const size_t CANDIDATE_COUNT = sizeof(CANDIDATES) / sizeof(CANDIDATES[0]);
+
+static const char *STREAM_TYPE = "multipart/x-mixed-replace;boundary=frame";
+static const char *STREAM_BOUNDARY = "\r\n--frame\r\n";
+static const char *STREAM_PART = "Content-Type: image/jpeg\r\nContent-Length: %u\r\n\r\n";
+
+static httpd_handle_t control_server = NULL;
+static httpd_handle_t stream_server = NULL;
+static const PinMap *active_map = NULL;
+static volatile uint32_t frames_served = 0;
+
+static bool tryPinMap(const PinMap &m) {
+  camera_config_t c = {};
+  c.pin_pwdn = m.pwdn; c.pin_reset = m.reset; c.pin_xclk = m.xclk;
+  c.pin_sccb_sda = m.sda; c.pin_sccb_scl = m.scl;
+  c.pin_d7 = m.d7; c.pin_d6 = m.d6; c.pin_d5 = m.d5; c.pin_d4 = m.d4;
+  c.pin_d3 = m.d3; c.pin_d2 = m.d2; c.pin_d1 = m.d1; c.pin_d0 = m.d0;
+  c.pin_vsync = m.vsync; c.pin_href = m.href; c.pin_pclk = m.pclk;
+  c.xclk_freq_hz = 20000000;
+  c.ledc_timer = LEDC_TIMER_0; c.ledc_channel = LEDC_CHANNEL_0;
+  c.pixel_format = PIXFORMAT_JPEG;
+  c.frame_size = FRAMESIZE_QVGA;   // Matches the factory default; raise once stable.
+  c.jpeg_quality = 12;
+  c.fb_count = psramFound() ? 2 : 1;
+  c.fb_location = psramFound() ? CAMERA_FB_IN_PSRAM : CAMERA_FB_IN_DRAM;
+  c.grab_mode = CAMERA_GRAB_LATEST;
+
+  if (esp_camera_init(&c) != ESP_OK) return false;
+  // Init can succeed on a wrong map yet never produce a frame, so demand one.
+  camera_fb_t *fb = esp_camera_fb_get();
+  if (!fb || fb->len == 0) {
+    if (fb) esp_camera_fb_return(fb);
+    esp_camera_deinit();
+    return false;
+  }
+  esp_camera_fb_return(fb);
+  return true;
+}
+
+static bool startCamera() {
+  if (PIN_FORCE >= 0 && PIN_FORCE < (int)CANDIDATE_COUNT) {
+    if (tryPinMap(CANDIDATES[PIN_FORCE])) { active_map = &CANDIDATES[PIN_FORCE]; return true; }
+    Serial.printf("Forced pin map %d failed\n", PIN_FORCE);
+    return false;
+  }
+  for (size_t i = 0; i < CANDIDATE_COUNT; ++i) {
+    Serial.printf("Probing pin map %u: %s ... ", (unsigned)i, CANDIDATES[i].name);
+    if (tryPinMap(CANDIDATES[i])) {
+      Serial.println("OK");
+      active_map = &CANDIDATES[i];
+      sensor_t *s = esp_camera_sensor_get();
+      if (s) Serial.printf("Sensor PID 0x%04x (GC2145 is 0x2145)\n", s->id.PID);
+      Serial.printf("Working map index %u -- set PIN_FORCE to skip probing\n", (unsigned)i);
+      return true;
+    }
+    Serial.println("no");
+    delay(120);
+  }
+  return false;
+}
+
+static esp_err_t captureHandler(httpd_req_t *req) {
+  camera_fb_t *fb = esp_camera_fb_get();
+  if (!fb) return httpd_resp_send_500(req);
+  httpd_resp_set_type(req, "image/jpeg");
+  httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+  esp_err_t r = httpd_resp_send(req, (const char *)fb->buf, fb->len);
+  esp_camera_fb_return(fb);
+  return r;
+}
+
+static esp_err_t statusHandler(httpd_req_t *req) {
+  char buf[256];
+  int n = snprintf(buf, sizeof(buf),
+                   "{\"pin_map\":\"%s\",\"ip\":\"%s\",\"rssi\":%d,"
+                   "\"frames_served\":%u,\"psram\":%s,\"heap\":%u}",
+                   active_map ? active_map->name : "none",
+                   WiFi.localIP().toString().c_str(), (int)WiFi.RSSI(),
+                   (unsigned)frames_served, psramFound() ? "true" : "false",
+                   (unsigned)ESP.getFreeHeap());
+  httpd_resp_set_type(req, "application/json");
+  httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+  return httpd_resp_send(req, buf, n);
+}
+
+static esp_err_t streamHandler(httpd_req_t *req) {
+  esp_err_t res = httpd_resp_set_type(req, STREAM_TYPE);
+  if (res != ESP_OK) return res;
+  httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+  char part[80];
+  while (true) {
+    camera_fb_t *fb = esp_camera_fb_get();
+    if (!fb) { res = ESP_FAIL; break; }
+    size_t len = snprintf(part, sizeof(part), STREAM_PART, (unsigned)fb->len);
+    res = httpd_resp_send_chunk(req, STREAM_BOUNDARY, strlen(STREAM_BOUNDARY));
+    if (res == ESP_OK) res = httpd_resp_send_chunk(req, part, len);
+    if (res == ESP_OK) res = httpd_resp_send_chunk(req, (const char *)fb->buf, fb->len);
+    esp_camera_fb_return(fb);
+    if (res != ESP_OK) break;   // Client disconnected.
+    ++frames_served;
+  }
+  return res;
+}
+
+static void startServers() {
+  httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
+  cfg.server_port = 80;
+  cfg.ctrl_port = 32768;
+  httpd_uri_t capture = {"/capture", HTTP_GET, captureHandler, NULL};
+  httpd_uri_t status = {"/status", HTTP_GET, statusHandler, NULL};
+  if (httpd_start(&control_server, &cfg) == ESP_OK) {
+    httpd_register_uri_handler(control_server, &capture);
+    httpd_register_uri_handler(control_server, &status);
+  }
+  // Separate instance on 81 so a long-lived stream cannot block /capture.
+  cfg.server_port = 81;
+  cfg.ctrl_port = 32769;
+  httpd_uri_t stream = {"/stream", HTTP_GET, streamHandler, NULL};
+  if (httpd_start(&stream_server, &cfg) == ESP_OK) {
+    httpd_register_uri_handler(stream_server, &stream);
+  }
+}
+
+void setup() {
+  Serial.begin(115200);
+  delay(300);
+  Serial.println("\nArm camera: station mode");
+  Serial.printf("PSRAM: %s\n", psramFound() ? "yes" : "NO (frame sizes limited)");
+
+  if (!startCamera()) {
+    Serial.println("FATAL: no candidate pin map produced a frame.");
+    Serial.println("Add this board's mapping to CANDIDATES, or restore the backup.");
+    while (true) delay(1000);
+  }
+
+  WiFi.persistent(false);
+  WiFi.mode(WIFI_STA);
+  WiFi.setSleep(false);          // Sleep adds latency and stalls MJPEG.
+  if (strlen(HOST_IP) > 0) {
+    IPAddress ip, gw, mask;
+    if (ip.fromString(HOST_IP) && gw.fromString(GATEWAY_IP) && mask.fromString(SUBNET_MASK))
+      WiFi.config(ip, gw, mask);
+  }
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  Serial.printf("Joining %s", WIFI_SSID);
+  uint32_t started = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - started < 30000) {
+    delay(400);
+    Serial.print('.');
+  }
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("\nWi-Fi failed; restarting");
+    delay(1500);
+    ESP.restart();
+  }
+  Serial.printf("\nConnected. IP %s  RSSI %d\n",
+                WiFi.localIP().toString().c_str(), (int)WiFi.RSSI());
+  Serial.printf("Stream  http://%s:81/stream\n", WiFi.localIP().toString().c_str());
+  Serial.printf("Still   http://%s/capture\n", WiFi.localIP().toString().c_str());
+
+  if (MDNS.begin(MDNS_NAME)) {
+    MDNS.addService("http", "tcp", 80);
+    Serial.printf("Also http://%s.local:81/stream\n", MDNS_NAME);
+  }
+  startServers();
+}
+
+void loop() {
+  // Reboot on a dropped link so the camera reappears without intervention.
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("Wi-Fi lost; restarting");
+    delay(1000);
+    ESP.restart();
+  }
+  delay(2000);
+}

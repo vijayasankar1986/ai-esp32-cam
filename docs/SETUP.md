@@ -33,7 +33,7 @@ The default `dry_run: true` does not open the serial port. A camera URL is still
 
 ```bash
 ros2 topic hz /camera/image_raw
-ros2 topic echo /vision/red_detected
+ros2 topic echo /vision/color_detected
 ```
 
 Optional desktop viewer: install `ros-jazzy-rqt-image-view`, run `ros2 run rqt_image_view rqt_image_view`, select `/camera/image_raw`, and use best-effort QoS if offered. Headless Pi users can view from another ROS computer configured on the same network.
@@ -56,6 +56,6 @@ Invalid or uncalibrated moves return `ERR ...`. `STOP` disables PWM and holding 
 
 ## 5. Enable movement
 
-Set calibrated `home_pose`, `trigger_pose`, `min_angles`, and `max_angles` in YAML. With clear workspace, supported arm, and physical power switch accessible, change `dry_run` to `false` and restart. Hardware mode commands home at startup. Three consecutive red-positive frames trigger the target; after `hold_seconds` it returns home. Three negative frames are required before another trigger. Keep the object removed while the arm returns home.
+Set calibrated `home_pose`, `trigger_pose`, `min_angles`, and `max_angles` in YAML. With clear workspace, supported arm, and physical power switch accessible, change `dry_run` to `false` and restart. Hardware mode commands home at startup. Three consecutive colour-positive frames trigger the target; after `hold_seconds` it returns home. Three negative frames are required before another trigger. Keep the object removed while the arm returns home.
 
-Tune `red_fraction` for lighting and object size. Detection measures the fraction of red pixels in the whole image; this is not object localization or a pick coordinate. Allow enough hold time for the slowest joint to finish moving. A lost camera feed causes STOP after `camera_stale_seconds` and requires restarting the node.
+Set `target_color` to red, green, blue, yellow, orange or purple, and tune `color_fraction` for lighting and object size. Detection measures the fraction of matching pixels in the whole image; this is not object localization or a pick coordinate. Allow enough hold time for the slowest joint to finish moving. A lost camera feed causes STOP after `camera_stale_seconds` and requires restarting the node.

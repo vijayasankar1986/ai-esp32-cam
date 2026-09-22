@@ -70,7 +70,7 @@ def ros_observer():
 
         node.create_subscription(Image, '/camera/image_raw', on_image, qos_profile_sensor_data)
         node.create_subscription(JointState, '/arm/joint_states', on_joints, 10)
-        node.create_subscription(Bool, '/vision/red_detected', on_detection, 10)
+        node.create_subscription(Bool, '/vision/color_detected', on_detection, 10)
 
         def graph():
             with LOCK:

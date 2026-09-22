@@ -13,7 +13,7 @@ from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import Image, JointState
 from std_msgs.msg import Bool
 
-from .logic import DetectionGate, move_command
+from .logic import DetectionGate, color_ranges, move_command
 
 
 class CameraReader:
@@ -66,14 +66,15 @@ class ArmPOC(Node):
             'camera_url': '', 'dry_run': True, 'serial_port': '',
             'home_pose': [90, 90, 90, 90], 'trigger_pose': [90, 90, 90, 90],
             'min_angles': [80, 80, 80, 80], 'max_angles': [100, 100, 100, 100],
-            'red_fraction': 0.05, 'stable_frames': 3,
+            'target_color': 'red', 'color_fraction': 0.05, 'stable_frames': 3,
             'hold_seconds': 3.0, 'camera_stale_seconds': 3.0,
         }
         self.p = {k: self.declare_parameter(k, v).value for k, v in defaults.items()}
         if not self.p['camera_url'].startswith(('http://', 'https://')):
             raise ValueError('Set camera_url to the actual HTTP JPEG/MJPEG endpoint')
-        if not 0 < self.p['red_fraction'] <= 1:
-            raise ValueError('red_fraction must be in (0, 1]')
+        if not 0 < self.p['color_fraction'] <= 1:
+            raise ValueError('color_fraction must be in (0, 1]')
+        self.ranges = color_ranges(self.p['target_color'])
         if not all(np.isfinite(self.p[k]) and self.p[k] > 0 for k in
                    ('hold_seconds', 'camera_stale_seconds')):
             raise ValueError('Timeouts must be finite and positive')
@@ -94,7 +95,7 @@ class ArmPOC(Node):
         self.last_sent = 0.0
         self.bridge = CvBridge()
         self.images = self.create_publisher(Image, '/camera/image_raw', qos_profile_sensor_data)
-        self.detected = self.create_publisher(Bool, '/vision/red_detected', 10)
+        self.detected = self.create_publisher(Bool, '/vision/color_detected', 10)
         self.joints = self.create_publisher(JointState, '/arm/joint_states', 10)
         if not self.p['dry_run']:
             self.port = serial.Serial(self.p['serial_port'], 115200, timeout=0.3, write_timeout=0.3)
@@ -108,7 +109,9 @@ class ArmPOC(Node):
         self.camera = CameraReader(self.p['camera_url'])
         self.started = time.monotonic()
         self.timer = self.create_timer(0.1, self.tick)
-        self.get_logger().info('Dry run enabled' if self.p['dry_run'] else 'Hardware mode: commanding home')
+        self.get_logger().info(
+            ('Dry run enabled' if self.p['dry_run'] else 'Hardware mode: commanding home')
+            + f", tracking {self.p['target_color']}")
 
     def exchange(self, command, expected):
         self.port.write(command)
@@ -143,18 +146,20 @@ class ArmPOC(Node):
             message.header.frame_id = 'camera_optical_frame'
             self.images.publish(message)
             hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-            mask = cv2.inRange(hsv, (0, 100, 70), (10, 255, 255))
-            mask |= cv2.inRange(hsv, (170, 100, 70), (179, 255, 255))
-            red = bool(np.count_nonzero(mask) / mask.size >= self.p['red_fraction'])
-            self.detected.publish(Bool(data=red))
-            event = self.gate.update(red)
+            mask = None
+            for low, high in self.ranges:
+                band = cv2.inRange(hsv, low, high)
+                mask = band if mask is None else (mask | band)
+            seen = bool(np.count_nonzero(mask) / mask.size >= self.p['color_fraction'])
+            self.detected.publish(Bool(data=seen))
+            event = self.gate.update(seen)
             if event and self.phase == 'idle':
                 self.command = self.target
                 self.pose = self.target_pose
                 self.phase = 'target'
                 self.deadline = now + self.p['hold_seconds']
                 self.last_sent = 0.0
-                self.get_logger().info('Red detected: trigger pose')
+                self.get_logger().info(f"{self.p['target_color'].capitalize()} detected: trigger pose")
         if self.phase != 'idle' and now >= self.deadline:
             if self.phase == 'target':
                 self.command = self.home

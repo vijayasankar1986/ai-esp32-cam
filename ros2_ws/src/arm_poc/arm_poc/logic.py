@@ -29,3 +29,28 @@ class DetectionGate:
             self.armed = False
             return True
         return False
+
+
+# HSV ranges for the colours the vision node can target. OpenCV hue is 0-179,
+# so red wraps the end of the circle and needs two ranges. Saturation and
+# value floors reject grey and near-black pixels that would otherwise match
+# any hue under poor lighting.
+COLOR_RANGES = {
+    'red': (((0, 100, 70), (10, 255, 255)), ((170, 100, 70), (179, 255, 255))),
+    'green': (((36, 80, 60), (85, 255, 255)),),
+    'blue': (((90, 80, 60), (130, 255, 255)),),
+    'yellow': (((20, 100, 80), (35, 255, 255)),),
+    'orange': (((11, 120, 90), (19, 255, 255)),),
+    'purple': (((131, 60, 60), (160, 255, 255)),),
+}
+
+
+def color_ranges(name):
+    """HSV inRange bounds for a named colour, validated."""
+    if not isinstance(name, str):
+        raise ValueError('Colour must be a string')
+    key = name.strip().lower()
+    if key not in COLOR_RANGES:
+        raise ValueError(
+            'Unknown colour %r; choose one of %s' % (name, ', '.join(sorted(COLOR_RANGES))))
+    return COLOR_RANGES[key]

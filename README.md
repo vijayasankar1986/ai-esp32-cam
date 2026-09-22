@@ -2,7 +2,7 @@
 
 Starter project for your Hiwonder ESP32-CAM, four-servo mechanical arm, separate ESP32 servo controller, and Raspberry Pi running Ubuntu.
 
-**POC:** detect a red object in a fixed camera view and move the arm to a calibrated preset. This is a preset-motion demo, not yet arbitrary object picking or inverse kinematics.
+**POC:** detect a coloured object in a fixed camera view and move the arm to a calibrated preset. This is a preset-motion demo, not yet arbitrary object picking or inverse kinematics.
 
 ## Architecture
 
@@ -16,7 +16,7 @@ Hiwonder camera -- HTTP JPEG/MJPEG over Wi-Fi --> Raspberry Pi / ROS 2
                                                 Four servos
 ```
 
-The ROS node publishes `/camera/image_raw` and `/vision/red_detected`. A rising detection triggers one preset; removing the object rearms detection. Hardware movement is disabled by default. No micro-ROS or PCA9685 is required.
+The ROS node publishes `/camera/image_raw`, `/vision/color_detected` and `/arm/joint_states`. A rising detection triggers one preset; removing the object rearms detection. The tracked colour is set by `target_color` in the YAML and defaults to red. Hardware movement is disabled by default. No micro-ROS or PCA9685 is required.
 
 ## Files
 
@@ -24,7 +24,8 @@ The ROS node publishes `/camera/image_raw` and `/vision/red_detected`. A rising 
 - [Pi installation and operation](docs/SETUP.md)
 - [Acceptance checks and troubleshooting](docs/TESTING.md)
 - [Verified Raspberry Pi connection and deployment](docs/PI_DEPLOYMENT.md)
-- [ESP32 firmware](firmware/arm_controller/arm_controller.ino)
+- [ESP32 controller firmware](firmware/arm_controller/arm_controller.ino)
+- [Camera station-mode firmware](docs/CAMERA_FIRMWARE.md)
 - [ROS configuration](ros2_ws/src/arm_poc/config/poc.yaml)
 - [ROS node](ros2_ws/src/arm_poc/arm_poc/node.py)
 
