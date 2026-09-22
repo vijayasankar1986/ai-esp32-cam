@@ -60,7 +60,16 @@ node commands the return.
 1. Support the arm and disconnect servo horns/linkages. Start with one unloaded servo.
 2. Confirm GPIO assignments and supply wiring. Firmware defaults to no PWM output and refuses motion until `CALIBRATED` is enabled.
 3. With the servo unloaded, review the example 1000–2000 us pulse mapping, narrow 80–100 degree limits, and 90 degree startup position. Set `CALIBRATED = true` only for this controlled commissioning step, then upload.
-4. Use a serial terminal at 115200, newline ending. Send `MOVE 90 90 90 90`. All configured outputs become active, so only connect the servo currently being tested.
+4. Jog with `python tools/jog.py COM6` (or the `/dev/serial/by-id/...` path on
+   the Pi). Keys 1-4 pick a joint, `+`/`-` step one degree, `[`/`]` step five,
+   space sends `STOP`, `q` quits. All configured outputs become active on the
+   first accepted `MOVE`, so connect only the servo being tested.
+
+   Use the tool rather than a serial terminal. The firmware detaches PWM two
+   seconds after the last accepted `MOVE`, so a hand-typed command makes the
+   arm hold briefly and then go limp; the tool resends continuously. It also
+   shows the controller's reply live, so `ERR limits` or a brownout is obvious
+   as it happens.
 5. Test small steps inside the configured range. Send `STOP` to detach PWM. This releases holding torque; support the mechanism.
 6. Fit horns at known positions, then test each connected joint with narrowly bounded movement. Stop immediately for binding, buzzing, or excessive current. Record the safe limits below and edit firmware limits accordingly.
 7. Set matching conservative limits and calibrated home/trigger poses in `poc.yaml`. Increase range only after physical verification. Default poses are identical, so the starter performs no deliberate pose change.
