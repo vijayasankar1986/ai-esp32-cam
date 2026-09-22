@@ -1,6 +1,11 @@
 [Unit]
 Description=Robotic arm project status dashboard
-After=network.target
+# network-online, not network.target: the latter fires before the network is
+# usable, and a DDS node that starts then completes only partial discovery. It
+# sees publisher counts but never receives messages, so the dashboard shows a
+# connected node with zero frames until it is restarted by hand.
+Wants=network-online.target
+After=network-online.target
 
 [Service]
 Type=simple
@@ -11,6 +16,7 @@ WorkingDirectory=/home/bbt/ai-esp32cam
 # arm. The node must ALSO run with allow_manual:=true before anything moves.
 # Comment this line out to make the dashboard observe-only again.
 Environment=ARM_DASHBOARD_CONTROL=1
+ExecStartPre=/bin/sleep 5
 ExecStart=/bin/bash /home/bbt/ai-esp32cam/dashboard/start.sh
 Restart=on-failure
 RestartSec=3
