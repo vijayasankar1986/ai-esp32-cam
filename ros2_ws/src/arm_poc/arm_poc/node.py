@@ -9,7 +9,7 @@ import serial
 import rclpy
 from cv_bridge import CvBridge
 from rclpy.node import Node
-from rcl_interfaces.msg import ParameterDescriptor, ParameterType
+from rcl_interfaces.msg import ParameterDescriptor
 from rclpy.qos import qos_profile_sensor_data
 from geometry_msgs.msg import PointStamped
 from sensor_msgs.msg import Image, JointState
@@ -76,9 +76,10 @@ class ArmPOC(Node):
             'hold_seconds': 3.0, 'camera_stale_seconds': 3.0,
         }
         self.p = {k: self.declare_parameter(k, v).value for k, v in defaults.items()}
+        # dynamic_typing because an empty default would otherwise be inferred as
+        # a byte array and clash with the double array actually supplied.
         self.p['calibration'] = self.declare_parameter(
-            'calibration', [],
-            ParameterDescriptor(type=ParameterType.PARAMETER_DOUBLE_ARRAY)).value or []
+            'calibration', [], ParameterDescriptor(dynamic_typing=True)).value or []
         if not self.p['camera_url'].startswith(('http://', 'https://')):
             raise ValueError('Set camera_url to the actual HTTP JPEG/MJPEG endpoint')
         if not 0 < self.p['color_fraction'] <= 1:
