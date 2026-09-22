@@ -220,16 +220,30 @@ class ArmPOC(Node):
             self.port.write(b'PING\n')
             reply = self.port.readline().strip()
             if reply == b'READY':
+                self.drain(quiet=0.2, limit=1.0)  # Drop any duplicate READY.
                 return
             self.get_logger().warn(
                 f'Handshake attempt {attempt + 1}: got {reply!r}, expected READY')
         raise RuntimeError('Controller never answered PING with READY')
 
-    def exchange(self, command, expected):
-        self.port.write(command)
-        reply = self.port.readline().strip()
-        if reply != expected:
-            self.drain(quiet=0.2, limit=1.0)   # Resync so the next try is clean.
+    def exchange(self, command, expected, retries=1):
+        """Send a command and require its reply, tolerating one stale line.
+
+        A reply left over from an earlier command sits one ahead of everything
+        after it, so a MOVE reads READY and looks like a hard failure when the
+        controller is actually fine. Draining and retrying once recovers from
+        that; a genuinely dead controller still fails on the retry.
+        """
+        for attempt in range(retries + 1):
+            self.port.write(command)
+            reply = self.port.readline().strip()
+            if reply == expected:
+                return
+            self.drain(quiet=0.2, limit=1.0)   # Resync before deciding.
+            if attempt < retries:
+                self.get_logger().warn(
+                    f'Stale reply {reply!r} for {command.strip()!r}; resyncing')
+                continue
             hint = (' (no reply: controller may have reset, check servo power)'
                     if reply == b'' else '')
             raise RuntimeError(
