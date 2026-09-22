@@ -129,3 +129,16 @@ function renderArm(s){
   b.style.color=armTarget?'var(--text)':'var(--muted)';d.append(n,b);return d;}));
 }
 requestAnimationFrame(drawArm);
+
+/* Fullscreen for either viewer. The canvas re-reads its own bounding box each
+   frame, so the 3D view rescales without extra work. */
+function toggleFull(el){
+ if(document.fullscreenElement){document.exitFullscreen();return;}
+ if(el.requestFullscreen)el.requestFullscreen().catch(()=>{});
+}
+$('frame-full').onclick=()=>toggleFull(document.querySelector('.viewer'));
+$('arm-full').onclick=()=>toggleFull(document.querySelector('.armview'));
+addEventListener('keydown',e=>{
+ if(e.key==='f'&&!/^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName))
+  toggleFull(document.querySelector('.viewer'));
+});

@@ -35,6 +35,13 @@
 #define PIN_FORCE  0        // Candidate 0 is confirmed for this board; -1 probes all.
 #define MDNS_NAME  "armcam" // Reachable as armcam.local where mDNS is supported.
 #define JPEG_QUALITY 80     // Software encoder, 0-100. Higher costs CPU and bandwidth.
+// Frame size. The GC2145 has no hardware JPEG, so every frame is encoded in
+// software and larger sizes cost frame rate rather than just bandwidth.
+// QVGA 320x240 is smooth; VGA 640x480 is a good compromise; SVGA and above
+// drop to a few frames per second. Colour detection works on the fraction of
+// matching pixels, so it gains nothing from extra resolution -- raise this
+// for a nicer picture on the dashboard, not for better detection.
+#define FRAME_SIZE FRAMESIZE_VGA
 
 struct PinMap {
   const char *name;
@@ -72,7 +79,7 @@ static bool tryPinMap(const PinMap &m, pixformat_t fmt) {
   c.xclk_freq_hz = 20000000;            // GC2145 tops out at 20 MHz.
   c.ledc_timer = LEDC_TIMER_0; c.ledc_channel = LEDC_CHANNEL_0;
   c.pixel_format = fmt;
-  c.frame_size = FRAMESIZE_QVGA;        // Matches the factory default.
+  c.frame_size = FRAME_SIZE;
   c.jpeg_quality = 12;                  // Only used when the sensor does JPEG.
   c.fb_count = psramFound() ? 2 : 1;
   c.fb_location = psramFound() ? CAMERA_FB_IN_PSRAM : CAMERA_FB_IN_DRAM;
