@@ -1,0 +1,54 @@
+<?xml version="1.0"?>
+<!--
+  Semantic description. Two groups, because this build has three positioning
+  joints and one gripper joint: GPIO 33 drives the jaws, not a wrist.
+
+  Three degrees of freedom cannot satisfy a full six-DOF pose goal, so the IK
+  solver runs position-only (see kinematics.yaml). Ask for a point in space,
+  not an orientation.
+-->
+<robot name="arm">
+
+  <!-- A chain, not a joint list: an end-effector's parent link has to belong
+       to its parent group, and a joint list carries no links. The chain runs
+       to tool0, so pose goals are given for the gripper tip. -->
+  <group name="arm">
+    <chain base_link="base_link" tip_link="tool0"/>
+  </group>
+
+  <group name="gripper">
+    <joint name="joint3"/>
+  </group>
+
+  <!-- Zero is the pose the firmware homes to (servo 90 degrees on every
+       channel): arm straight up, jaws mid-travel. -->
+  <group_state name="home" group="arm">
+    <joint name="joint0" value="0"/>
+    <joint name="joint1" value="0"/>
+    <joint name="joint2" value="0"/>
+  </group_state>
+
+  <!-- Jaw travel from poc.yaml: gripper_open 120, gripper_closed 60, both on
+       the servo scale where 90 is neutral. -->
+  <group_state name="open" group="gripper">
+    <joint name="joint3" value="0.5236"/>
+  </group_state>
+  <group_state name="closed" group="gripper">
+    <joint name="joint3" value="-0.5236"/>
+  </group_state>
+
+  <end_effector name="jaws" parent_link="wrist_link" group="gripper" parent_group="arm"/>
+
+  <virtual_joint name="world_fixed" type="fixed" parent_frame="world" child_link="base_link"/>
+
+  <!-- Neighbours in the chain, and the pairs that printed parts hold clear of
+       each other by construction. -->
+  <disable_collisions link1="base_link" link2="base_rotor" reason="Adjacent"/>
+  <disable_collisions link1="base_rotor" link2="upper_arm_link" reason="Adjacent"/>
+  <disable_collisions link1="upper_arm_link" link2="forearm_link" reason="Adjacent"/>
+  <disable_collisions link1="forearm_link" link2="wrist_link" reason="Adjacent"/>
+  <disable_collisions link1="wrist_link" link2="gripper_jaw" reason="Adjacent"/>
+  <disable_collisions link1="base_link" link2="upper_arm_link" reason="Never"/>
+  <disable_collisions link1="forearm_link" link2="gripper_jaw" reason="Never"/>
+
+</robot>

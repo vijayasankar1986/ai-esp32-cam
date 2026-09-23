@@ -1,0 +1,37 @@
+# OMPL pipeline.
+#
+# The plugin and adapter lists are not optional decoration: providing this file
+# at all replaces moveit_configs_utils' ompl_planning.yaml wholesale, and
+# without planning_plugins move_group aborts at startup with "Planning plugin
+# name is empty or not defined in namespace 'ompl'". They are copied from
+# moveit_configs_utils 2.12.4's own defaults.
+planning_plugins:
+  - ompl_interface/OMPLPlanner
+
+request_adapters:
+  - default_planning_request_adapters/ResolveConstraintFrames
+  - default_planning_request_adapters/ValidateWorkspaceBounds
+  - default_planning_request_adapters/CheckStartStateBounds
+  - default_planning_request_adapters/CheckStartStateCollision
+
+response_adapters:
+  - default_planning_response_adapters/AddTimeOptimalParameterization
+  - default_planning_response_adapters/ValidateSolution
+  - default_planning_response_adapters/DisplayMotionPath
+
+planner_configs:
+  RRTConnectkConfigDefault:
+    type: geometric::RRTConnect
+    range: 0.0
+
+# Three joints, a small workspace and no obstacles beyond the arm itself:
+# RRTConnect finds these paths immediately and there is nothing to gain from
+# the rest of the OMPL catalogue.
+arm:
+  planner_configs:
+    - RRTConnectkConfigDefault
+  projection_evaluator: joints(joint0,joint1)
+
+gripper:
+  planner_configs:
+    - RRTConnectkConfigDefault

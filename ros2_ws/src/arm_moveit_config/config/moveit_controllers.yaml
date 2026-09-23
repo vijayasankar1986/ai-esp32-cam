@@ -1,0 +1,26 @@
+# One controller for all four joints: the hardware takes a whole pose per
+# command (MOVE base shoulder elbow gripper), so splitting the arm and the
+# gripper into separate action servers would only mean two halves racing to
+# write the same message. arm_moveit_bridge serves this action.
+moveit_simple_controller_manager:
+  controller_names:
+    - arm_controller
+  arm_controller:
+    type: FollowJointTrajectory
+    action_ns: follow_joint_trajectory
+    default: true
+    joints:
+      - joint0
+      - joint1
+      - joint2
+      - joint3
+
+moveit_controller_manager: moveit_simple_controller_manager/MoveItSimpleControllerManager
+
+# Allowed tracking error before execution is aborted. The arm has no position
+# feedback at all -- /arm/joint_states echoes the commanded pose -- so tight
+# tolerances would be checking the bridge against itself. See the README.
+trajectory_execution:
+  allowed_execution_duration_scaling: 4.0
+  allowed_goal_duration_margin: 10.0
+  allowed_start_tolerance: 0.1

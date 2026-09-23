@@ -1,0 +1,13 @@
+# Deliberately slower than the servos can manage.
+#
+# The firmware ramps about 1 degree per 20 ms (50 deg/s, 0.87 rad/s) and, under
+# SEQUENTIAL_MOTION on USB power, moves one joint at a time. A four-joint move
+# therefore takes roughly four times as long as the planner's timing suggests.
+# Planning near the servo's own rate would produce trajectories the hardware
+# cannot track at all; these values keep the planned timing within reach and
+# the current draw low. The bridge waits for motion to settle regardless.
+joint_limits:
+  joint0: {has_velocity_limits: true, max_velocity: 0.25, has_acceleration_limits: true, max_acceleration: 0.5}
+  joint1: {has_velocity_limits: true, max_velocity: 0.25, has_acceleration_limits: true, max_acceleration: 0.5}
+  joint2: {has_velocity_limits: true, max_velocity: 0.25, has_acceleration_limits: true, max_acceleration: 0.5}
+  joint3: {has_velocity_limits: true, max_velocity: 0.25, has_acceleration_limits: true, max_acceleration: 0.5}
