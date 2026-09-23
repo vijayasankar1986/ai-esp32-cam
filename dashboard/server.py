@@ -67,8 +67,8 @@ def ros_observer():
         from geometry_msgs.msg import PointStamped
         from sensor_msgs.msg import Image, JointState
         from std_msgs.msg import Bool
-        rclpy.init()
-        node = Node('arm_dashboard_observer')
+        from rclpy.context import Context
+        from rclpy.executors import SingleThreadedExecutor
         bridge = CvBridge()
 
         def on_image(msg):
@@ -104,53 +104,88 @@ def ros_observer():
                 STATE['joints'] = [round(math.degrees(a), 1) for a in msg.position]
                 STATE['last_joints'] = time.monotonic()
 
-        subs = []
-        retry = {'at': 0.0}
+        # A starved reader cannot be repaired from inside its own participant.
+        # Recreating the subscriptions was tried first: it logs 'resubscribing'
+        # every twelve seconds forever and still receives nothing. Since Foxy
+        # the DDS participant belongs to the context rather than the node, so
+        # neither new subscriptions nor a new node escape a stale one. Only a
+        # new context gets a new participant, which is why restarting the
+        # process always fixed it and nothing short of that did.
+        starved_since = [0.0]
+        backoff = [15.0]
 
-        def subscribe():
-            for old in subs:
-                node.destroy_subscription(old)
-            subs.clear()
-            subs.append(node.create_subscription(
-                Image, '/camera/image_raw', on_image, qos_profile_sensor_data))
-            subs.append(node.create_subscription(
-                JointState, '/arm/joint_states', on_joints, 10))
-            subs.append(node.create_subscription(
-                Bool, '/vision/color_detected', on_detection, 10))
-            subs.append(node.create_subscription(
-                PointStamped, '/vision/target_point', on_target, 10))
+        while True:
+            context = Context()
+            rclpy.init(context=context)
+            node = Node('arm_dashboard_observer', context=context)
+            executor = SingleThreadedExecutor(context=context)
+            executor.add_node(node)
 
-        subscribe()
-        if CONTROL:
-            JOG['publisher'] = node.create_publisher(JointState, '/arm/manual_pose', 10)
+            node.create_subscription(
+                Image, '/camera/image_raw', on_image, qos_profile_sensor_data)
+            node.create_subscription(
+                JointState, '/arm/joint_states', on_joints, 10)
+            node.create_subscription(
+                Bool, '/vision/color_detected', on_detection, 10)
+            node.create_subscription(
+                PointStamped, '/vision/target_point', on_target, 10)
+            if CONTROL:
+                JOG['publisher'] = node.create_publisher(
+                    JointState, '/arm/manual_pose', 10)
 
-        def graph():
-            """Watch the graph, and resubscribe if a publisher sends nothing.
+            rebuild = [False]
 
-            Subscriptions created before the node existed do not reliably pick
-            up a later publisher, which left the dashboard reporting a
-            connected system with no data until someone restarted it. Rebuilding
-            them means startup order no longer matters and a node restart
-            recovers on its own.
-            """
-            images = node.count_publishers('/camera/image_raw')
-            now = time.monotonic()
+            def graph(node=node, rebuild=rebuild):
+                """Watch the graph, and rebuild if a publisher sends nothing.
+
+                A publisher that appears after this observer started does not
+                reliably reach it: discovery matches, count_publishers reports
+                it, and no data ever arrives. Startup order decided whether the
+                camera worked, and every arm_poc restart broke the feed until
+                somebody restarted the dashboard.
+                """
+                images = node.count_publishers('/camera/image_raw')
+                now = time.monotonic()
+                with LOCK:
+                    STATE['publishers'] = images
+                    STATE['arm_node'] = node.count_publishers('/arm/joint_states') > 0
+                    last = STATE['last_image']
+                fed = bool(last) and now - last <= 12
+                if not images or fed:
+                    starved_since[0] = 0.0
+                    backoff[0] = 15.0
+                    return
+                if not starved_since[0]:
+                    starved_since[0] = now
+                    return
+                if now - starved_since[0] >= backoff[0]:
+                    node.get_logger().warn(
+                        'Publisher present but no images; rebuilding the ROS context')
+                    # Backed off, because a camera that is genuinely absent
+                    # looks identical from here and would otherwise rebuild the
+                    # participant every fifteen seconds for as long as it is off.
+                    backoff[0] = min(backoff[0] * 2, 120.0)
+                    starved_since[0] = 0.0
+                    rebuild[0] = True
+
+            node.create_timer(2.0, graph)
             with LOCK:
-                STATE['publishers'] = images
-                STATE['arm_node'] = node.count_publishers('/arm/joint_states') > 0
-                last = STATE['last_image']
-            starved = images and (not last or now - last > 12)
-            # Rate-limited by its own clock rather than by faking last_image,
-            # which would report a live camera when no frame had arrived.
-            if starved and now - retry['at'] > 12:
-                retry['at'] = now
-                node.get_logger().warn('Publisher present but no images; resubscribing')
-                subscribe()
+                STATE['ros'] = True
 
-        node.create_timer(2.0, graph)
-        with LOCK:
-            STATE['ros'] = True
-        rclpy.spin(node)
+            while not rebuild[0]:
+                executor.spin_once(timeout_sec=0.2)
+
+            # The HTTP thread publishes jog commands through this, and it
+            # belongs to the node about to be destroyed. status() already
+            # reports control unavailable while it is None.
+            JOG['publisher'] = None
+            try:
+                executor.remove_node(node)
+                node.destroy_node()
+                context.try_shutdown()
+            except Exception as exc:                 # never strand the observer
+                with LOCK:
+                    STATE['ros_error'] = f'context rebuild: {exc}'
     except Exception as exc:
         with LOCK:
             STATE['ros'] = False
