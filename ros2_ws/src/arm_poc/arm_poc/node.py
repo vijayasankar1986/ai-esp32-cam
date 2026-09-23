@@ -71,6 +71,57 @@ class CameraReader:
                 self.stop.wait(1.0)
 
 
+class DeviceCameraReader:
+    """USB webcam on the Pi, read through V4L2. Same interface as CameraReader.
+
+    Selected when camera_url is a device path such as /dev/video0. Prefer the
+    /dev/v4l/by-id/ link: video0 and video1 can swap between boots, and the
+    by-id name follows the camera. MJPG is requested because most webcams only
+    reach full frame rate in it; raw YUYV over USB 2 is far slower.
+    """
+
+    def __init__(self, device, width=640, height=480):
+        self.device = device
+        self.size = (width, height)
+        self.lock = threading.Lock()
+        self.latest = None
+        self.error = 'Waiting for first frame'
+        self.stop = threading.Event()
+        self.thread = threading.Thread(target=self.run, daemon=True)
+        self.thread.start()
+
+    def open(self):
+        capture = cv2.VideoCapture(self.device, cv2.CAP_V4L2)
+        if not capture.isOpened():
+            raise RuntimeError(f'Cannot open {self.device} (unplugged, or bbt '
+                               'not in the video group?)')
+        capture.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
+        capture.set(cv2.CAP_PROP_FRAME_WIDTH, self.size[0])
+        capture.set(cv2.CAP_PROP_FRAME_HEIGHT, self.size[1])
+        capture.set(cv2.CAP_PROP_BUFFERSIZE, 1)   # Newest frame, not a queue.
+        return capture
+
+    def run(self):
+        while not self.stop.is_set():
+            capture = None
+            try:
+                capture = self.open()
+                while not self.stop.is_set():
+                    ok, frame = capture.read()
+                    if not ok or frame is None:
+                        raise RuntimeError(f'{self.device} stopped delivering frames')
+                    with self.lock:
+                        self.latest = (time.monotonic(), frame)
+                        self.error = ''
+            except Exception as exc:
+                with self.lock:
+                    self.error = str(exc)
+                self.stop.wait(1.0)
+            finally:
+                if capture is not None:
+                    capture.release()
+
+
 class ArmPOC(Node):
     def __init__(self):
         super().__init__('arm_poc')
@@ -90,8 +141,9 @@ class ArmPOC(Node):
         # a byte array and clash with the double array actually supplied.
         self.p['calibration'] = self.declare_parameter(
             'calibration', [], ParameterDescriptor(dynamic_typing=True)).value or []
-        if not self.p['camera_url'].startswith(('http://', 'https://')):
-            raise ValueError('Set camera_url to the actual HTTP JPEG/MJPEG endpoint')
+        if not self.p['camera_url'].startswith(('http://', 'https://', '/dev/')):
+            raise ValueError('Set camera_url to an HTTP JPEG/MJPEG endpoint '
+                             'or a /dev/ video device')
         if not 0 < self.p['color_fraction'] <= 1:
             raise ValueError('color_fraction must be in (0, 1]')
         self.ranges = color_ranges(self.p['target_color'])
@@ -135,8 +187,11 @@ class ArmPOC(Node):
             except Exception:
                 self.port.close()
                 raise
-        self.camera = CameraReader(self.p['camera_url'], self.p['connect_timeout'],
-                                   self.p['read_timeout'])
+        if self.p['camera_url'].startswith('/dev/'):
+            self.camera = DeviceCameraReader(self.p['camera_url'])
+        else:
+            self.camera = CameraReader(self.p['camera_url'], self.p['connect_timeout'],
+                                       self.p['read_timeout'])
         # Serial runs on its own thread. A blocked write must never stall the
         # timer callback: a 1 s timeout plus a retry was starving image
         # publishing whenever the controller struggled, so a power problem on
