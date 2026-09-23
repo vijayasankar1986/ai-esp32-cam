@@ -28,7 +28,11 @@ const int MAX_ANGLE[4] = {180, 180, 180, 180};
 // This makes a four-joint move about four times slower, so raise hold_seconds
 // in poc.yaml to suit. Set false only with a separate servo supply fitted.
 const bool SEQUENTIAL_MOTION = true;
-const int STEP_MS = 20;        // Milliseconds per one-degree step.
+// Milliseconds per one-degree step: 50 gives 20 deg/s per joint. Slow on
+// purpose. A servo's current scales with how fast it is asked to move, and
+// at 20 ms the USB supply sagged far enough to knock both USB serial bridges
+// off the Pi's bus mid-move. Gentler motion is also easier on SG90 gears.
+const int STEP_MS = 50;
 const int ATTACH_STAGGER_MS = 120; // Gap between bringing each servo up.
 const int PULSE_MIN_US = 1000; // Verify your actual servo specifications.
 const int PULSE_MAX_US = 2000;
@@ -112,7 +116,11 @@ void loop() {
     }
   }
   unsigned long now = millis();
-  if (active && now - lastMove > 2000) stopServos();
+  // Release torque once idle, but never mid-move: at STEP_MS a long travel
+  // outlasts the 2 s window, and cutting PWM there would drop the arm.
+  bool arrived = true;
+  for (int i = 0; i < 4; ++i) if (currentAngle[i] != targetAngle[i]) arrived = false;
+  if (active && arrived && now - lastMove > 2000) stopServos();
   if (active && now - lastStep >= STEP_MS) {
     lastStep = now;
     for (int i = 0; i < 4; ++i) {
