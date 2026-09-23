@@ -26,6 +26,7 @@ The ROS node publishes `/camera/image_raw`, `/vision/color_detected` and `/arm/j
 - [Verified Raspberry Pi connection and deployment](docs/PI_DEPLOYMENT.md)
 - [ESP32 controller firmware](firmware/arm_controller/arm_controller.ino)
 - [Camera station-mode firmware](docs/CAMERA_FIRMWARE.md)
+- [Camera browser object-detection firmware](docs/OBJECT_DETECTION.md)
 - [ROS configuration](ros2_ws/src/arm_poc/config/poc.yaml)
 - [ROS node](ros2_ws/src/arm_poc/arm_poc/node.py)
 - [Manual jog tool](tools/jog.py)
