@@ -25,9 +25,16 @@ WorkingDirectory=/home/bbt/ai-esp32cam
 Environment=ARM_DRY_RUN=true
 EnvironmentFile=-/etc/default/arm-lab
 
-# The ESP32 resets when the port opens, and DDS discovery needs a moment after
-# the network comes up. The dashboard waits 5s for the same reason.
-ExecStartPre=/bin/sleep 8
+# Wait until the camera actually answers, rather than sleeping and hoping.
+#
+# network-online.target is not enough. Started about a hundred seconds after
+# boot with Wi-Fi still settling, the node announced its topics and delivered
+# nothing: subscribers saw the publisher and never received a frame, and the
+# node never noticed because from its side it was publishing normally. A real
+# round trip to the camera proves the network is usable before the DDS
+# participant exists. Gives up after 60s and starts anyway, so a camera that is
+# switched off cannot keep the node down for ever.
+ExecStartPre=/bin/bash -c 'for i in $(seq 1 30); do curl -sf -m 2 -o /dev/null http://${ARM_CAMERA_HOST:-192.168.1.2}/capture && break; sleep 2; done; exit 0'
 ExecStart=/bin/bash -c 'source /opt/ros/jazzy/setup.bash && \
   source /home/bbt/ai-esp32cam/ros2_ws/install/setup.bash && \
   exec ros2 run arm_poc poc --ros-args \

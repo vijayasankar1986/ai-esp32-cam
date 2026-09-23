@@ -25,7 +25,18 @@ sleep 2
 source /opt/ros/jazzy/setup.bash
 source "$ROOT/ros2_ws/install/setup.bash"
 cd "$ROOT"
-setsid nohup ros2 run arm_poc poc --ros-args \
-  --params-file "$ROOT/ros2_ws/src/arm_poc/config/poc.yaml" \
-  > "$LOG" 2>&1 < /dev/null &
+
+# Honour the same switch systemd uses, or this button silently contradicts it.
+# poc.yaml carries dry_run: false, so on a machine configured for observe-only
+# this would kill the working node, start one that opens the serial port, and
+# leave nothing running at all when the handshake fails. Without the file,
+# poc.yaml decides as before.
+DRY_RUN_ARG=()
+if [ -f /etc/default/arm-lab ]; then
+  . /etc/default/arm-lab
+  [ -n "${ARM_DRY_RUN:-}" ] && DRY_RUN_ARG=(-p "dry_run:=${ARM_DRY_RUN}")
+fi
+
+PARAMS="$ROOT/ros2_ws/src/arm_poc/config/poc.yaml"
+setsid nohup ros2 run arm_poc poc --ros-args --params-file "$PARAMS" "${DRY_RUN_ARG[@]}" > "$LOG" 2>&1 < /dev/null &
 echo "node starting, log at $LOG"
