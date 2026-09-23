@@ -12,6 +12,19 @@ def move_command(pose, lower, upper):
     return ('MOVE ' + ' '.join(str(int(x)) for x in pose) + '\n').encode('ascii')
 
 
+def clean_reply(line):
+    """Strip line noise from a controller reply, keeping printable ASCII.
+
+    With the servos on USB power, motion glitches the serial line and a real
+    reply arrives as b'\\xff\\xff...OK'. Each glitch reads as a start bit
+    followed by an idle-high line, which is exactly 0xFF. Treating that as a
+    dead controller latched an unrecoverable fault on every move. Only
+    non-printable bytes are dropped, so a genuine reset still fails: its boot
+    chatter and READY survive and do not match the expected reply.
+    """
+    return bytes(b for b in line if 32 <= b < 127).strip()
+
+
 class DetectionGate:
     def __init__(self, frames):
         if frames < 1:

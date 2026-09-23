@@ -3,7 +3,7 @@ import sys
 import unittest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / 'ros2_ws/src/arm_poc'))
-from arm_poc.logic import (COLOR_RANGES, DetectionGate, color_ranges,
+from arm_poc.logic import (COLOR_RANGES, DetectionGate, clean_reply, color_ranges,
                            fit_pixel_to_joints, move_command, pose_from_pixel)
 
 
@@ -29,6 +29,20 @@ class LogicTests(unittest.TestCase):
         for pose in ([90]*3, [79]*4, [101]*4, [float('nan')]*4, [90.5]*4):
             with self.assertRaises(ValueError):
                 move_command(pose, [80]*4, [100]*4)
+
+
+class ReplyTests(unittest.TestCase):
+    def test_servo_noise_before_ok_is_dropped(self):
+        # Captured from the Pi: servo motion glitched the line ahead of OK.
+        self.assertEqual(clean_reply(b'\xff' * 64 + b'OK\r\n'), b'OK')
+
+    def test_clean_reply_unchanged(self):
+        self.assertEqual(clean_reply(b'READY\r\n'), b'READY')
+
+    def test_real_failures_still_differ(self):
+        self.assertNotEqual(clean_reply(b'\xffets Jul 29 2019\r\n'), b'OK')
+        self.assertNotEqual(clean_reply(b'ERR limits\n'), b'OK')
+        self.assertEqual(clean_reply(b''), b'')
 
 
 class ColorTests(unittest.TestCase):

@@ -15,7 +15,7 @@ from geometry_msgs.msg import PointStamped
 from sensor_msgs.msg import Image, JointState
 from std_msgs.msg import Bool
 
-from .logic import (DetectionGate, color_ranges, fit_pixel_to_joints,
+from .logic import (DetectionGate, clean_reply, color_ranges, fit_pixel_to_joints,
                     move_command, pose_from_pixel)
 
 
@@ -277,7 +277,7 @@ class ArmPOC(Node):
             self.drain()
             self.port.reset_input_buffer()
             self.port.write(b'PING\n')
-            reply = self.port.readline().strip()
+            reply = clean_reply(self.port.readline())
             if reply == b'READY':
                 self.drain(quiet=0.2, limit=1.0)  # Drop any duplicate READY.
                 return
@@ -295,7 +295,7 @@ class ArmPOC(Node):
         """
         for attempt in range(retries + 1):
             self.port.write(command)
-            reply = self.port.readline().strip()
+            reply = clean_reply(self.port.readline())
             if reply == expected:
                 return
             self.drain(quiet=0.2, limit=1.0)   # Resync before deciding.
