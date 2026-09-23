@@ -33,13 +33,13 @@ by defining `AP_SSID` / `AP_PASSWORD` in `secrets.h`.
 
 ## Build and flash
 
-Built against Arduino-ESP32 3.3.x. Flash at 115200: the CH340 bridge corrupts
-transfers at higher rates.
+Built against Arduino-ESP32 3.3.x. The `esp32cam` board definition has no
+upload-speed option and flashes at a fixed 460800, which this CH340 handles.
 
 ```bash
 arduino-cli compile --fqbn esp32:esp32:esp32cam firmware/object_detect
-arduino-cli upload  --fqbn esp32:esp32:esp32cam -p /dev/ttyUSB0 \
-  --board-options UploadSpeed=115200 firmware/object_detect
+arduino-cli upload  --fqbn esp32:esp32:esp32cam \
+  -p /dev/serial/by-id/usb-1a86_USB_Serial-if00-port0 firmware/object_detect
 ```
 
 On the Pi the camera is the CH340 port,
