@@ -613,6 +613,9 @@ void loop() {
 
   if (client) {
     String currentLine = "";
+    // GET /capture serves a still like /?getstill, so the ROS node's
+    // camera_url keeps working with this firmware as with camera_station.
+    bool capture = false;
 
     while (client.connected()) {
       if (client.available()) {
@@ -621,9 +624,10 @@ void loop() {
         getCommand(c);
 
         if (c == '\n') {
+          if (currentLine.startsWith("GET /capture")) capture = true;
           if (currentLine.length() == 0) {
 
-            if (cmd=="getstill") {
+            if (cmd=="getstill" || capture) {
 
               camera_fb_t * fb = NULL;
               fb = esp_camera_fb_get();
