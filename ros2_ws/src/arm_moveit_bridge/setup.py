@@ -19,6 +19,7 @@ setup(
     entry_points={
         'console_scripts': [
             'bridge = arm_moveit_bridge.trajectory_bridge:main',
+            'vision_pick = arm_moveit_bridge.vision_pick:main',
         ],
     },
 )

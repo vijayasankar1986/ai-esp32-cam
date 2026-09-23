@@ -54,6 +54,12 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'rviz', default_value='false',
             description='Start RViz with the motion planning panel'),
+        DeclareLaunchArgument(
+            'vision', default_value='false',
+            description='Plan to whatever the camera detects'),
+        DeclareLaunchArgument(
+            'vision_execute', default_value='false',
+            description='Let a detection move the arm, not just plan'),
 
         Node(
             package='robot_state_publisher', executable='robot_state_publisher',
@@ -76,6 +82,16 @@ def generate_launch_description():
             output='screen', parameters=[robot_description],
             condition=IfCondition(
                 PythonNot(LaunchConfiguration('execute')))),
+
+        # Camera-driven planning. Two switches, not one: starting it is not
+        # the same as letting a detection move the arm, and the geometry it
+        # depends on is unmeasured.
+        Node(
+            package='arm_moveit_bridge', executable='vision_pick',
+            output='screen',
+            parameters=[{'plan_only': PythonNot(
+                LaunchConfiguration('vision_execute'))}],
+            condition=IfCondition(LaunchConfiguration('vision'))),
 
         Node(
             package='rviz2', executable='rviz2', output='screen',
