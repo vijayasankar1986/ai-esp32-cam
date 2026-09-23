@@ -1,0 +1,34 @@
+[Unit]
+Description=Neural object detection (SSD MobileNet v3 via OpenCV)
+Wants=network-online.target
+After=network-online.target arm-node.service
+
+[Service]
+Type=simple
+User=bbt
+WorkingDirectory=/home/bbt/ai-esp32cam
+
+# Nothing here can move the arm. It reads /camera/image_raw and publishes
+# /vision/object_point; only vision_pick with vision_execute:=true turns a
+# detection into motion, and that is not a service.
+Environment=ARM_TARGET_CLASS=
+EnvironmentFile=-/etc/default/arm-lab
+
+# Waits for the node rather than ordering against it: After= does not mean the
+# topic exists yet, and the detector exits if the model files are missing.
+ExecStartPre=/bin/sleep 15
+ExecStart=/bin/bash -c 'source /opt/ros/jazzy/setup.bash && \
+  source /home/bbt/ai-esp32cam/ros2_ws/install/setup.bash && \
+  exec ros2 run arm_vision detector --ros-args \
+    -p target_class:=${ARM_TARGET_CLASS}'
+
+# Unlike the node, this owns no hardware and nothing races it, so restarting
+# is free. It exits deliberately when ~/models is empty, and restarting then
+# would only loop, so failures back off rather than hammer.
+Restart=on-failure
+RestartSec=30
+
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

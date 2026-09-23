@@ -1,0 +1,56 @@
+[Unit]
+Description=Robotic arm ROS 2 node (camera, detection, servo control)
+# network-online, not network.target, for the same reason as the dashboard:
+# the node fetches camera frames over Wi-Fi and a DDS participant that starts
+# before the network is usable completes only partial discovery.
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=bbt
+WorkingDirectory=/home/bbt/ai-esp32cam
+
+# SAFETY: ARM_DRY_RUN decides whether this moves the arm at every power-on.
+#
+#   true  - observe only. The serial port is never opened, the camera and
+#           detection still run, and the dashboard gets its live feed.
+#   false - hardware mode. The node opens the port and COMMANDS HOME on
+#           startup, so the arm moves as soon as the Pi boots, unattended.
+#
+# It defaults to true here and is overridden in /etc/default/arm-lab, which
+# install.sh creates. Do not switch to false while the controller is still
+# browning out: see docs/HARDWARE.md. An arm that lunges home on every power
+# cut is the worst way to discover the supply is still undersized.
+Environment=ARM_DRY_RUN=true
+EnvironmentFile=-/etc/default/arm-lab
+
+# The ESP32 resets when the port opens, and DDS discovery needs a moment after
+# the network comes up. The dashboard waits 5s for the same reason.
+ExecStartPre=/bin/sleep 8
+ExecStart=/bin/bash -c 'source /opt/ros/jazzy/setup.bash && \
+  source /home/bbt/ai-esp32cam/ros2_ws/install/setup.bash && \
+  exec ros2 run arm_poc poc --ros-args \
+    --params-file /home/bbt/ai-esp32cam/ros2_ws/src/arm_poc/config/poc.yaml \
+    -p dry_run:=${ARM_DRY_RUN}'
+
+# Deliberately no automatic restart.
+#
+# The dashboard's restart button runs run_node.sh, which pkills the node before
+# starting its own. systemd would read that kill as a failure, wait RestartSec
+# and start a second node, and two nodes on one serial port split each other's
+# replies into faults that look like controller problems. So this unit brings
+# the node up at boot and then stays out of the way; the dashboard button owns
+# restarts from then on.
+#
+# A latched fault would not be restarted by systemd anyway: the node catches
+# controller errors, stops commanding and keeps running by design.
+Restart=no
+
+NoNewPrivileges=true
+# No PrivateTmp: Fast DDS uses shared memory for same-host transport and needs
+# the same /tmp and /dev/shm as the dashboard observer, or the two discover
+# each other and exchange nothing.
+
+[Install]
+WantedBy=multi-user.target
