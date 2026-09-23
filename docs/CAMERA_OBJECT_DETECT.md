@@ -53,7 +53,12 @@ the access point is up. The IP is printed at 115200.
 ## Use
 
 Open `http://<ip>/`, wait for "Please wait for loading model" to clear, then
-press **Start Detect**. Pick the object to count and a minimum score.
+press **Start Detect**.
+
+Deployed 2026-09-23 on the AI-Thinker board on the Pi's CH340 port
+(ESP32-D0WD-V3, OV2640 PID 0x26, 4 MB PSRAM). It joined Wi-Fi at
+`192.168.1.2`; stills measured 0.2 s each at QVGA, and a switch to VGA
+returned 640x480. Pick the object to count and a minimum score.
 Detections of that object are reported over serial:
 
 ```text
@@ -86,6 +91,9 @@ the connection without waiting for the page.
   Arduino allocator cannot see it.
 - `if (P1="4")` assigned instead of comparing, so `analogwrite` always drove
   GPIO 4.
+- `camera_config_t` is zero-initialised. The esp32-camera bundled with core
+  3.x added `jpeg_buffer_size`; left as stack garbage it sized the buffer
+  wrong, every frame logged `cam_hal: FB-OVF`, and every grab returned NULL.
 - LINE Notify commands removed; the service shut down in March 2025.
 - `CAMERA_GRAB_LATEST` with two PSRAM buffers, so each detection sees the
   newest frame rather than one buffered from the previous request.

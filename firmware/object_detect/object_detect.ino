@@ -192,7 +192,7 @@ void setup() {
   Serial.setDebugOutput(true);
   Serial.println();
 
-  camera_config_t config;
+  camera_config_t config = {};   // Zeroed: newer fields such as jpeg_buffer_size must not be stack garbage.
   config.ledc_channel = LEDC_CHANNEL_0;
   config.ledc_timer = LEDC_TIMER_0;
   config.pin_d0 = Y2_GPIO_NUM;
