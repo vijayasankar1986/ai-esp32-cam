@@ -19,7 +19,19 @@ function renderFrame(){
  const detected=demo?t?.red:current.red;
  $('detection').textContent=detected===null||detected===undefined?'Detection —':detected?'Colour detected':'No colour detected';
 }
-function render(s){current=s;
+// Second camera: the ESP32-CAM, relayed by the server from its /capture.
+// The stream stays open while shown; the server only polls the ESP32 while
+// someone is connected to it.
+function renderWifiCam(s){
+ const w=s.wifi_cam;if(!w)return;
+ const seen=w.frame_age!==null;
+ if(!$('frame2').src.endsWith('/api/stream2'))$('frame2').src='/api/stream2';
+ $('frame2').hidden=!seen;$('empty2').hidden=seen;
+ $('empty2-detail').textContent=w.error&&w.error!=='Not polled yet'?w.error:'Connecting over Wi-Fi.';
+ $('image-label2').textContent=w.live?'LIVE · WI-FI':seen?'LAST FRAME · FEED STALE':'WI-FI CAMERA · NO FRAMES';
+ $('frame2-detail').textContent=`${w.frames} frames · ${w.url.replace(/^https?:\/\//,'')}`;
+}
+function render(s){current=s;renderWifiCam(s);
  $('control-mode').textContent=s.control?'Manual controls enabled':'Observe mode';
  $('control-description').textContent=s.control?'Movement buttons can move the arm':'Movement controls are disabled';
  $('arm-status').textContent=s.arm_node?'Service running':'Service stopped';$('arm-status').classList.toggle('amber-text',!s.arm_node);$('arm-status').style.color=s.arm_node?'var(--mint)':'';
@@ -148,6 +160,7 @@ function toggleFull(el){
  if(el.requestFullscreen)el.requestFullscreen().catch(()=>{});
 }
 $('frame-full').onclick=()=>toggleFull(document.querySelector('.viewer'));
+$('frame2-full').onclick=()=>toggleFull($('viewer2'));
 $('arm-full').onclick=()=>toggleFull(document.querySelector('.armview'));
 addEventListener('keydown',e=>{
  if(e.key==='f'&&!/^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName))

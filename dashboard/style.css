@@ -170,9 +170,9 @@ button:focus-visible,a:focus-visible,summary:focus-visible{
   linear-gradient(90deg,#ffffff08 1px,transparent 1px);
   background-size:34px 34px}
 .viewer img{position:absolute;width:100%;height:100%;object-fit:contain}
-.viewer #empty{text-align:center;padding:20px;color:var(--muted)}
-#empty h3{font-size:16px;color:var(--text);font-weight:500;margin:10px 0 6px}
-#empty p{font-size:12.5px;margin:0;line-height:1.6}
+.viewer #empty,.viewer #empty2{text-align:center;padding:20px;color:var(--muted)}
+#empty h3,#empty2 h3{font-size:16px;color:var(--text);font-weight:500;margin:10px 0 6px}
+#empty p,#empty2 p{font-size:12.5px;margin:0;line-height:1.6}
 .camera-icon{font-size:40px;color:#48525f;line-height:1}
 
 .armview{touch-action:none;background-image:radial-gradient(ellipse at 50% 60%,#0f2a2a55,transparent 68%)}

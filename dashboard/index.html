@@ -58,7 +58,7 @@
 <section class="stage">
   <article class="panel camera-panel">
     <div class="panel-head">
-      <h2>Live vision</h2>
+      <h2>USB webcam</h2>
       <div class="tabs" aria-label="Image source">
         <button id="live-tab" class="selected" aria-pressed="true">Live camera</button>
         <button id="test-tab" aria-pressed="false">Test images</button>
@@ -77,6 +77,26 @@
     <div class="viewer-footer">
       <span id="frame-detail" class="mono">/camera/image_raw</span>
       <span id="detection">Detection —</span>
+    </div>
+  </article>
+
+  <article class="panel camera-panel">
+    <div class="panel-head">
+      <h2>ESP32-CAM</h2>
+      <button id="frame2-full" class="iconbtn" title="Fullscreen" aria-label="Show ESP32-CAM fullscreen">⛶</button>
+    </div>
+    <div class="viewer" id="viewer2">
+      <img id="frame2" alt="ESP32-CAM Wi-Fi camera stream" hidden>
+      <div id="empty2">
+        <div class="camera-icon">◎</div>
+        <h3>Waiting for the ESP32-CAM</h3>
+        <p id="empty2-detail">Connecting over Wi-Fi.</p>
+      </div>
+      <span id="image-label2" class="image-label">WI-FI CAMERA · NO FRAMES</span>
+    </div>
+    <div class="viewer-footer">
+      <span id="frame2-detail" class="mono">—</span>
+      <span>Not used for detection</span>
     </div>
   </article>
 

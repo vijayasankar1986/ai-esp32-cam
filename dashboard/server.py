@@ -50,6 +50,41 @@ STATE = {'ros': False, 'ros_error': '', 'image_count': 0, 'last_image': 0,
          'test': {'status': 'not_run', 'output': '', 'finished': None}}
 
 
+# Second camera: the ESP32-CAM over Wi-Fi, shown beside the ROS feed (now the
+# Pi's USB webcam). Read here directly rather than through ROS, since the node
+# takes one camera. Polled only while someone is watching: the ESP32 answers
+# one request at a time and also serves its own browser detection page.
+WIFI_CAM_URL = os.environ.get('ARM_WIFI_CAM_URL', 'http://192.168.1.2/capture')
+WIFI_CAM = {'jpeg': None, 'count': 0, 'last': 0.0, 'error': 'Not polled yet',
+            'wanted': 0.0}
+WIFI_FRAME = threading.Condition()
+
+
+def wifi_cam_poller():
+    from urllib.request import urlopen
+    while True:
+        with LOCK:
+            idle = time.monotonic() - WIFI_CAM['wanted'] > 10
+        if idle:
+            time.sleep(0.5)
+            continue
+        try:
+            with urlopen(WIFI_CAM_URL, timeout=5) as response:
+                body = response.read()
+            if not body.startswith(b'\xff\xd8'):
+                raise ValueError('Reply was not a JPEG; check ARM_WIFI_CAM_URL')
+            with LOCK:
+                WIFI_CAM.update(jpeg=body, count=WIFI_CAM['count'] + 1,
+                                last=time.monotonic(), error='')
+            with WIFI_FRAME:
+                WIFI_FRAME.notify_all()
+            time.sleep(0.2)          # ~4 fps leaves the ESP32 room for others.
+        except Exception as exc:
+            with LOCK:
+                WIFI_CAM['error'] = str(exc)
+            time.sleep(2.0)
+
+
 def text_file(path, fallback=''):
     try:
         return Path(path).read_text().strip().strip('\x00')
@@ -211,6 +246,11 @@ def status():
     if not detection_time or now - detection_time > 3:
         data['red'] = None
     data['camera_live'] = data['frame_age'] is not None and data['frame_age'] < 3
+    with LOCK:
+        wifi_age = round(now - WIFI_CAM['last'], 1) if WIFI_CAM['last'] else None
+        data['wifi_cam'] = {'url': WIFI_CAM_URL, 'frame_age': wifi_age,
+                            'live': wifi_age is not None and wifi_age < 5,
+                            'frames': WIFI_CAM['count'], 'error': WIFI_CAM['error']}
     data['usb'] = [p.name for p in sorted(Path('/dev/serial/by-id').glob('*'))]
     data['host'] = socket.gethostname()
     data['model'] = text_file('/proc/device-tree/model', 'Raspberry Pi')
@@ -306,6 +346,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.respond(200, status())
         if path == '/api/stream':
             return self.stream_frames()
+        if path == '/api/stream2':
+            return self.stream_frames(wifi=True)
         if path == '/api/frame':
             with LOCK:
                 jpeg = STATE['jpeg']
@@ -317,9 +359,13 @@ class Handler(BaseHTTPRequestHandler):
                 return self.respond(404, {'error': 'No test image yet'})
         self.respond(404, {'error': 'Not found'})
 
-    def stream_frames(self):
-        """multipart/x-mixed-replace, the same shape the camera itself serves."""
+    def stream_frames(self, wifi=False):
+        """multipart/x-mixed-replace, the same shape the camera itself serves.
+
+        wifi=True streams the ESP32-CAM instead of the ROS image topic.
+        """
         boundary = 'armframe'
+        ready = WIFI_FRAME if wifi else FRAME_READY
         self.send_response(200)
         self.send_header('Content-Type', 'multipart/x-mixed-replace; boundary=' + boundary)
         self.send_header('Cache-Control', 'no-store')
@@ -328,10 +374,14 @@ class Handler(BaseHTTPRequestHandler):
         sent = -1
         try:
             while True:
-                with FRAME_READY:
-                    FRAME_READY.wait(timeout=2.0)
+                with ready:
+                    ready.wait(timeout=2.0)
                 with LOCK:
-                    jpeg, count = STATE['jpeg'], STATE['image_count']
+                    if wifi:
+                        WIFI_CAM['wanted'] = time.monotonic()   # Keep the poller running.
+                        jpeg, count = WIFI_CAM['jpeg'], WIFI_CAM['count']
+                    else:
+                        jpeg, count = STATE['jpeg'], STATE['image_count']
                 if jpeg is None or count == sent:
                     continue        # timed out waiting; loop so we notice a dead client
                 sent = count
@@ -470,5 +520,6 @@ class Handler(BaseHTTPRequestHandler):
 
 if __name__ == '__main__':
     threading.Thread(target=ros_observer, daemon=True).start()
+    threading.Thread(target=wifi_cam_poller, daemon=True).start()
     print('Arm dashboard listening on port 8080', flush=True)
     ThreadingHTTPServer(('0.0.0.0', 8080), Handler).serve_forever()
