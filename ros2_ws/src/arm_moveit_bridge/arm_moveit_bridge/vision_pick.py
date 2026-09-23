@@ -91,9 +91,16 @@ class VisionPick(Node):
         self.declare_parameter('shoulder_z', 0.067)
         self.declare_parameter('min_radius', 0.16)
         self.declare_parameter('max_radius', 0.22)
-        self.declare_parameter('min_fraction', 0.05)
+        # A bounding box around a cup at arm's length fills one to three
+        # percent of a 320x240 frame. The colour detector's 0.05 was a blob
+        # threshold and rejects every real object here.
+        self.declare_parameter('min_fraction', 0.005)
         self.declare_parameter('cooldown_seconds', 5.0)
         self.declare_parameter('plan_only', True)
+        # Either detector publishes the same message shape: arm_poc's colour
+        # threshold on /vision/target_point, arm_vision's neural detector on
+        # /vision/object_point. Switch source without touching this node.
+        self.declare_parameter('target_topic', '/vision/target_point')
 
         g = lambda n: self.get_parameter(n).value
         self.cam_xyz = list(g('camera_xyz'))
@@ -108,6 +115,7 @@ class VisionPick(Node):
         self.min_fraction = g('min_fraction')
         self.cooldown = g('cooldown_seconds')
         self.plan_only = g('plan_only')
+        self.topic = g('target_topic')
 
         self.rot = rpy_matrix(*self.cam_rpy)
         self.last_goal = 0.0
@@ -117,11 +125,12 @@ class VisionPick(Node):
 
         self.client = ActionClient(self, MoveGroup, '/move_action')
         self.create_subscription(
-            PointStamped, '/vision/target_point', self.on_target, 10)
+            PointStamped, self.topic, self.on_target, 10)
 
         mode = 'PLAN ONLY, nothing will move' if self.plan_only else \
                'EXECUTE, a detection will move the arm'
-        self.get_logger().info(f'Vision pick ready ({mode}).')
+        self.get_logger().info(
+            f'Vision pick ready ({mode}), watching {self.topic}.')
         self.get_logger().warn(
             'Camera pose, field of view and table height are unmeasured '
             'placeholders. Targets are only as right as those numbers.')
@@ -173,6 +182,10 @@ class VisionPick(Node):
         if self.busy or now - self.last_goal < self.cooldown:
             return
         if fraction < self.min_fraction:
+            self.last_goal = now
+            self.get_logger().info(
+                f'Ignoring a detection filling {fraction:.3f} of the frame, '
+                f'below min_fraction {self.min_fraction}')
             return
 
         point = self.ground(u, v)

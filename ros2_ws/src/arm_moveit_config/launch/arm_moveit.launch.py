@@ -60,6 +60,10 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'vision_execute', default_value='false',
             description='Let a detection move the arm, not just plan'),
+        DeclareLaunchArgument(
+            'vision_topic', default_value='/vision/target_point',
+            description="Colour detector's topic, or /vision/object_point "
+                        'for the neural detector in arm_vision'),
 
         Node(
             package='robot_state_publisher', executable='robot_state_publisher',
@@ -89,8 +93,10 @@ def generate_launch_description():
         Node(
             package='arm_moveit_bridge', executable='vision_pick',
             output='screen',
-            parameters=[{'plan_only': PythonNot(
-                LaunchConfiguration('vision_execute'))}],
+            parameters=[{
+                'plan_only': PythonNot(LaunchConfiguration('vision_execute')),
+                'target_topic': LaunchConfiguration('vision_topic'),
+            }],
             condition=IfCondition(LaunchConfiguration('vision'))),
 
         Node(

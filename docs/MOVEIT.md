@@ -83,6 +83,12 @@ Two conversions live in the bridge and nowhere else:
   arm arrives at each waypoint by a different route than the planner drew.
   Between waypoints, the collision-free guarantee does not hold.
 
+## Where the target comes from
+
+By default `vision_pick` watches `/vision/target_point`, the colour threshold
+in `arm_poc`. Point it at the neural detector instead with
+`vision_topic:=/vision/object_point`; see [OBJECT_DETECTION.md](OBJECT_DETECTION.md).
+
 ## Before the first execution
 
 The calibration table in `HARDWARE.md` is still empty and `poc.yaml` still
