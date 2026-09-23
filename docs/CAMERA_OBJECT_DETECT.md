@@ -4,9 +4,10 @@
 page that detects any of the 80 COCO objects. The ESP32 only serves JPEG
 stills; detection runs in the viewer's browser with TensorFlow.js COCO-SSD.
 
-This replaces `camera_station`, not adds to it. The `/stream`, `/capture`
-and `/status` endpoints the ROS node reads are gone while this is flashed.
-Reflash `camera_station` to go back.
+This replaces `camera_station`. It keeps `GET /capture`, a single JPEG,
+so the ROS node's `camera_url: http://<ip>/capture` and the Pi dashboard keep
+working. There is no `:81/stream` or `/status`; reflash `camera_station` if
+something needs those.
 
 ## How it works
 
@@ -72,7 +73,7 @@ the connection without waiting for the page.
 
 | Command | Parameters | Effect |
 |---|---|---|
-| `getstill` | any | One JPEG frame |
+| `getstill` | any | One JPEG frame; `GET /capture` does the same |
 | `framesize` | `QQVGA` .. `UXGA` | Resolution; QVGA by default |
 | `quality` | 10-63 | JPEG quality, lower is better |
 | `brightness`, `contrast` | -2..2 | Sensor tuning |
