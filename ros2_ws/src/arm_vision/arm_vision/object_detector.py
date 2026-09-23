@@ -38,6 +38,7 @@ from sensor_msgs.msg import Image
 from std_msgs.msg import Bool, String
 
 from arm_vision.coco_labels import GRASPABLE, name
+from arm_vision.yolo_onnx import YoloOnnx
 
 #: SSD MobileNet v3 was trained at this size with this normalisation. These
 #: are properties of the model, not preferences.
@@ -68,6 +69,9 @@ class ObjectDetector(Node):
         self.declare_parameter('graspable_only', True)
         self.declare_parameter('publish_annotated', True)
         self.declare_parameter('min_period', 0.4)
+        # A model.onnx trained in vision-platform, with labels.json beside it.
+        # Empty keeps the stock COCO SSD. See tools/fetch_platform_model.py.
+        self.declare_parameter('model', '')
 
         g = lambda n: self.get_parameter(n).value
         graph, weights = g('graph'), g('weights')
@@ -76,19 +80,23 @@ class ObjectDetector(Node):
         self.graspable_only = g('graspable_only')
         self.annotate = g('publish_annotated')
         self.min_period = g('min_period')
+        model = os.path.expanduser(g('model').strip())
 
-        for path in (graph, weights):
-            if not os.path.exists(path):
+        if model:
+            if not os.path.exists(model):
                 self.get_logger().error(
-                    f'Model file missing: {path}\n'
-                    'Run tools/fetch_detection_model.sh to download it.')
+                    f'Model file missing: {model}\n'
+                    'Run tools/fetch_platform_model.py to download it.')
                 raise SystemExit(1)
-
-        self.net = cv2.dnn_DetectionModel(graph, weights)
-        self.net.setInputSize(INPUT, INPUT)
-        self.net.setInputScale(SCALE)
-        self.net.setInputMean(MEAN)
-        self.net.setInputSwapRB(True)
+            self.yolo = YoloOnnx(model)
+            # Every class in a trained model was put there on purpose, so the
+            # COCO "graspable" filter does not apply to it.
+            self.graspable_only = False
+            self.kind = f'vision-platform YOLOv8 ({", ".join(self.yolo.names)})'
+        else:
+            self.yolo = None
+            self.kind = 'SSD MobileNet v3 via OpenCV DNN'
+            self.load_ssd(graph, weights)
 
         self.bridge = CvBridge()
         self.last = 0.0
@@ -104,9 +112,23 @@ class ObjectDetector(Node):
                                  qos_profile_sensor_data)
 
         self.get_logger().info(
-            'Detector ready: SSD MobileNet v3 via OpenCV DNN, looking for '
+            f'Detector ready: {self.kind}, looking for '
             + (f'"{self.want}"' if self.want else
                'anything graspable' if self.graspable_only else 'anything'))
+
+    def load_ssd(self, graph, weights):
+        for path in (graph, weights):
+            if not os.path.exists(path):
+                self.get_logger().error(
+                    f'Model file missing: {path}\n'
+                    'Run tools/fetch_detection_model.sh to download it.')
+                raise SystemExit(1)
+
+        self.net = cv2.dnn_DetectionModel(graph, weights)
+        self.net.setInputSize(INPUT, INPUT)
+        self.net.setInputScale(SCALE)
+        self.net.setInputMean(MEAN)
+        self.net.setInputSwapRB(True)
 
     def on_image(self, message):
         # Inference costs a third of a second and frames arrive faster than
@@ -127,10 +149,13 @@ class ObjectDetector(Node):
     def detect(self, message):
         frame = self.bridge.imgmsg_to_cv2(message, 'bgr8')
         height, width = frame.shape[:2]
-        ids, confs, boxes = self.net.detect(
-            frame, confThreshold=float(self.confidence))
-
         found = []
+        if self.yolo is not None:
+            found = self.yolo.detect(frame, float(self.confidence))
+            ids = []
+        else:
+            ids, confs, boxes = self.net.detect(
+                frame, confThreshold=float(self.confidence))
         if len(ids):
             for i, c, b in zip(np.array(ids).flatten(),
                                np.array(confs).flatten(), boxes):
@@ -161,7 +186,7 @@ class ObjectDetector(Node):
         if not found:
             return None
         if self.want:
-            matches = [f for f in found if f[0] == self.want]
+            matches = [f for f in found if f[0].lower() == self.want]
         elif self.graspable_only:
             matches = [f for f in found if f[0] in GRASPABLE]
         else:

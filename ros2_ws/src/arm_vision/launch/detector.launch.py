@@ -2,6 +2,7 @@
 
     ros2 launch arm_vision detector.launch.py
     ros2 launch arm_vision detector.launch.py target_class:=cup
+    ros2 launch arm_vision detector.launch.py model:=~/models/platform/model.onnx
 
 Needs arm_poc running for /camera/image_raw, and the model files in ~/models
 (tools/fetch_detection_model.sh). Publishes /vision/object_point, which
@@ -20,11 +21,14 @@ def generate_launch_description():
                               description='COCO class to hunt for, e.g. cup'),
         DeclareLaunchArgument('confidence', default_value='0.45'),
         DeclareLaunchArgument('publish_annotated', default_value='true'),
+        DeclareLaunchArgument('model', default_value='',
+                              description='vision-platform model.onnx; empty = COCO SSD'),
         Node(
             package='arm_vision', executable='detector', output='screen',
             parameters=[{
                 'target_class': LaunchConfiguration('target_class'),
                 'confidence': LaunchConfiguration('confidence'),
                 'publish_annotated': LaunchConfiguration('publish_annotated'),
+                'model': LaunchConfiguration('model'),
             }]),
     ])
