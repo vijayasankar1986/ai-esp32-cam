@@ -13,13 +13,17 @@ function renderFrame(){
   // Re-assigning a live MJPEG src would restart the stream every second.
   if(demo||!$('frame').src.endsWith('/api/stream'))$('frame').src=want;
   $('frame').alt=demo?'Generated test image, not a real camera feed':'Live ROS camera stream';}
- if(!available){$('empty').querySelector('h3').textContent=demo?'Try the software test':'Waiting for the camera';$('empty').querySelector('p').textContent=demo?'Run the system test to watch generated images pass through ROS 2.':'The camera’s Wi-Fi connection still needs setup. USB is currently providing a serial connection.';}
+ if(!available){$('empty').querySelector('h3').textContent=demo?'Try the software test':'Waiting for the camera';$('empty').querySelector('p').textContent=demo?'Run the system test to watch generated images pass through ROS 2.':'No images have arrived yet. Check camera power and its network connection.';}
  $('image-label').textContent=demo?'GENERATED TEST IMAGE · NO PHYSICAL CAMERA':current.camera_live?'LIVE CAMERA':available?'LAST FRAME · FEED STALE':'LIVE SOURCE · NO FRAMES';
  $('frame-detail').textContent=demo?(t?`${t.frames} test frames · ${words[t.phase]||t.phase}`:'Isolated test · ROS domain 87'):`${current.image_count} frames received · /camera/image_raw`;
  const detected=demo?t?.red:current.red;
  $('detection').textContent=detected===null||detected===undefined?'Detection —':detected?'Colour detected':'No colour detected';
 }
-function render(s){current=s;$('connection').textContent='Pi connected';$('connection').className='pill ok';$('offline').hidden=true;
+function render(s){current=s;
+ $('control-mode').textContent=s.control?'Manual controls enabled':'Observe mode';
+ $('control-description').textContent=s.control?'Movement buttons can move the arm':'Movement controls are disabled';
+ $('arm-status').textContent=s.arm_node?'Service running':'Service stopped';$('arm-status').classList.toggle('amber-text',!s.arm_node);$('arm-status').style.color=s.arm_node?'var(--mint)':'';
+ $('arm-status-detail').textContent='Commanded pose only · physical position unverified';$('connection').textContent='Pi connected';$('connection').className='pill ok';$('offline').hidden=true;
  $('ros').textContent=s.ros?'Observer online':'Unavailable';$('ros').style.color=s.ros?'var(--mint)':'var(--amber)';$('ros-detail').textContent=s.ros?(s.arm_node?`${s.ros_distro} · domain ${s.ros_domain} · arm_poc connected`:`${s.ros_distro} · domain ${s.ros_domain} · arm_poc NOT running`):s.ros_error;
  $('camera').textContent=s.camera_live?'Receiving frames':s.frame_age!==null?'Feed stale':'Not connected';$('camera').style.color=s.camera_live?'var(--mint)':'var(--amber)';$('camera-detail').textContent=s.camera_live?'Live images arriving through ROS 2':s.frame_age!==null?`No frames for ${s.frame_age}s — the node latches a fault on a stale feed and must be restarted`:'Camera not connected yet';
  $('usb').textContent=`${s.usb.length} connected`;$('host').textContent=s.host;$('model').textContent=s.model;$('temp').textContent=s.temperature===null?'—':s.temperature+' °C';$('disk').textContent=s.disk_free_gb+' GB';
@@ -30,7 +34,10 @@ function render(s){current=s;$('connection').textContent='Pi connected';$('conne
  $('test-detail').textContent=running?(t.telemetry?`${t.telemetry.frames} images processed. ${words[t.telemetry.phase]||t.telemetry.phase}.`:'Starting logic and ROS checks…'):t.status==='passed'?'Logic and ROS checks passed. Physical camera and arm remain unverified.':t.status==='failed'?'Check the output below for the failure.':'Run a test to see current results.';
  $('output').textContent=t.output||(running?'Test in progress…':'No test has been run since the dashboard started.');$('updated').textContent='Updated '+new Date().toLocaleTimeString();renderFrame();renderArm(s);renderJog(s);renderNode(s);renderCalib(s);renderGripper(s);
 }
-async function refresh(){try{const r=await fetch('/api/status',{signal:AbortSignal.timeout(5000)});if(!r.ok)throw Error(r.status);render(await r.json());}catch(e){$('connection').textContent='Pi unreachable';$('connection').className='pill warn';$('offline').hidden=false;$('run-test').disabled=true;}finally{setTimeout(refresh,1000);}}
+async function refresh(){try{const r=await fetch('/api/status',{signal:AbortSignal.timeout(5000)});if(!r.ok)throw Error(r.status);render(await r.json());}catch(e){$('connection').textContent='Pi unreachable';$('connection').className='pill warn';$('offline').hidden=false;$('run-test').disabled=true;
+ $('control-mode').textContent='Connection lost';$('control-description').textContent='Reconnect to use movement controls';
+ jogOn=false;held.clear();clearInterval(jogHold);clearTimeout(jogLapse);jogHold=null;
+ document.querySelectorAll('.jogs button,.jog-actions button').forEach(b=>b.disabled=true);}finally{setTimeout(refresh,1000);}}
 $('run-test').onclick=async()=>{busy=true;$('run-test').disabled=true;select('test');try{const r=await fetch('/api/test',{method:'POST',headers:{'X-Arm-Dashboard':'1'},signal:AbortSignal.timeout(5000)});if(!r.ok)throw Error((await r.json()).error||r.status);$('test-state').textContent='Starting…';}catch(e){$('test-detail').textContent='Could not start test: '+e.message;}finally{busy=false;}};
 refresh();
 
@@ -77,7 +84,7 @@ function drawArm(){
  if(AC.width!==(W*dpr|0)||AC.height!==(H*dpr|0)){AC.width=W*dpr|0;AC.height=H*dpr|0;}
  ACTX.setTransform(dpr,0,0,dpr,0,0);
  ACTX.clearRect(0,0,W,H);
- if(spin)az+=0.0032;
+ if(spin&&!matchMedia('(prefers-reduced-motion: reduce)').matches)az+=0.0032;
 
  // Ease toward the commanded pose so preset jumps read as motion, roughly
  // matching the firmware's 1 degree per 20 ms ramp.
@@ -164,7 +171,7 @@ function buildJog(){
   const row=document.createElement('div');row.className='row';
   for(const d of [-5,-1,1,5]){
    const b=document.createElement('button');b.textContent=(d>0?'+':'')+d;
-   b.onclick=()=>nudge(i,d);row.appendChild(b);
+   b.setAttribute('aria-label',`${d>0?'Increase':'Decrease'} ${j.n.toLowerCase()} by ${Math.abs(d)} degrees`);b.onclick=()=>nudge(i,d);row.appendChild(b);
   }
   box.append(h,v,row);return box;}));
 }
@@ -209,6 +216,7 @@ function renderJog(s){
  for(const b of document.querySelectorAll('.jogs button'))b.disabled=!jogOn;
  $('jog-home').disabled=!jogOn;$('jog-release').disabled=!jogOn;
  $('jog-keys').textContent=jogOn?keyLabel()+`   ·   range ${JOG_MIN[0]}–${JOG_MAX[0]}°`:'';
+ if(jogOn)$('jog-note').textContent='Adjust one joint at a time in 1° or 5° steps. Home returns every joint to 90°. Release control lets the pose expire, then the arm returns home. Keyboard shortcuts work while this panel is hovered or focused.';
  if(!jogOn)$('jog-note').textContent='Control is disabled. Start the dashboard with '
   +'ARM_DASHBOARD_CONTROL=1 and the node with allow_manual:=true. Off by default because '
   +'this server has no authentication.';
@@ -244,11 +252,12 @@ function pumpKeys(){
 function typing(){return /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName);}
 addEventListener('keydown',e=>{
  if(typing())return;
+ if(e.key!=='Escape'&&!document.querySelector('#controls').matches(':hover, :focus-within'))return;
  const k=e.key.toLowerCase();
  if(k==='h'&&jogOn){e.preventDefault();$('jog-home').click();return;}
  if(k==='escape'&&jogOn){e.preventDefault();$('jog-release').click();return;}
  const m=KEYMAP[k];
- if(!m)return;
+ if(!m||!jogOn)return;
  e.preventDefault();
  if(!jogOn){$('jog-reply').textContent='control is disabled';return;}
  if(held.has(k))return;                  // ignore the OS auto-repeat
@@ -355,3 +364,18 @@ function renderGripper(s){
    pre.textContent+=`\ngripper_open: ${g.open}\ngripper_closed: ${g.closed}`;
  }
 }
+
+/* --- Control deck tabs ------------------------------------------------------
+   Manual jog / Teach positions / Node control share one region. Panes stay in
+   the DOM (render* writes into all of them every second), only visibility
+   changes, so nothing needs to know which tab is open. */
+const DECK=[['tab-jog','pane-jog'],['tab-teach','pane-teach'],['tab-node','pane-node']];
+function deckSelect(id){
+ for(const [tab,pane] of DECK){
+  const on=tab===id;
+  $(tab).classList.toggle('selected',on);
+  $(tab).setAttribute('aria-selected',String(on));
+  $(pane).hidden=!on;
+ }
+}
+for(const [tab] of DECK)$(tab).onclick=()=>deckSelect(tab);

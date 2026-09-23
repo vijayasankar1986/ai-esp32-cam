@@ -1,28 +1,218 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Arm Lab · Raspberry Pi</title><link rel="icon" href="/favicon.svg"><link rel="stylesheet" href="/style.css"><script src="/app.js" defer></script></head>
-<body><main>
-<header><a class="brand" href="/"><span class="brandmark">⌁</span> ARM LAB <span class="version">01</span></a><span id="connection" class="pill">Connecting to Pi…</span></header>
-<section class="heading"><div><p class="eyebrow">RASPBERRY PI / VISION + MOTION</p><h1>See what’s working.</h1><p class="intro">Camera, ROS 2 and your four-servo arm—in one place.</p></div><div class="mode"><span class="dot amber"></span> Observe & test<span>No motor controls</span></div></section>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arm Lab · Raspberry Pi Vision</title>
+<link rel="icon" href="/favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;700&amp;display=swap">
+<link rel="stylesheet" href="/style.css">
+<script src="/app.js" defer></script>
+</head>
+
+<body>
+<a class="skip-link" href="#overview">Skip to dashboard</a>
+<main>
+
+<header class="topbar">
+  <a class="brand" href="/">
+    <span class="brandmark">⌁</span>
+    <span class="brandtext">ARM LAB<small>Raspberry Pi Vision</small></span>
+  </a>
+  <div class="topbar-right">
+    <div class="mode">
+      <span id="control-mode">Checking controls…</span>
+      <span id="control-description">Waiting for the Raspberry Pi</span>
+    </div>
+    <span id="connection" class="pill">Connecting to Pi…</span>
+  </div>
+</header>
+
 <div id="offline" class="notice" hidden>Connection to the Pi was lost. Values below may be out of date. Retrying…</div>
-<section class="cards" aria-label="System status">
-<article><p class="label">01 / ROS 2</p><h2 id="ros">Checking…</h2><p id="ros-detail">Connecting to the local observer</p></article>
-<article><p class="label">02 / CAMERA</p><h2 id="camera">Checking…</h2><p id="camera-detail">Waiting for image messages</p></article>
-<article><p class="label">03 / USB DEVICES</p><h2 id="usb">Checking…</h2><p>Serial adapters detected on the Pi</p></article>
-<article><p class="label">04 / ARM</p><h2 class="amber-text">Not verified</h2><p>Controller identity and servo calibration pending</p></article>
+
+<section class="statbar" id="overview" aria-label="System status">
+  <article class="stat">
+    <p class="label">OBSERVER</p>
+    <h2 id="ros">Checking…</h2>
+    <p id="ros-detail">Connecting to the local observer</p>
+  </article>
+  <article class="stat">
+    <p class="label">CAMERA FEED</p>
+    <h2 id="camera">Checking…</h2>
+    <p id="camera-detail">Waiting for image messages</p>
+  </article>
+  <article class="stat">
+    <p class="label">USB SERIAL</p>
+    <h2 id="usb">Checking…</h2>
+    <p>Serial adapters detected on the Pi</p>
+  </article>
+  <article class="stat">
+    <p class="label">ARM CONTROLLER</p>
+    <h2 id="arm-status" class="amber-text">Checking…</h2>
+    <p id="arm-status-detail">Waiting for controller status</p>
+  </article>
 </section>
-<section class="workspace">
-<article class="panel camera-panel"><div class="panel-head"><h2>Vision monitor</h2><div class="tabs" aria-label="Image source"><button id="live-tab" class="selected" aria-pressed="true">Live camera</button><button id="test-tab" aria-pressed="false">Test images</button></div><button id="frame-full" class="iconbtn" title="Fullscreen (f)" aria-label="Show camera fullscreen">⛶</button></div>
-<div class="viewer"><img id="frame" alt="Camera image" hidden><div id="empty"><div class="camera-icon">◎</div><h3>Waiting for the camera</h3><p>The camera’s Wi-Fi connection still needs setup.<br>USB is currently providing a serial connection.</p></div><span id="image-label" class="image-label">LIVE SOURCE · NO FRAMES</span></div>
-<div class="viewer-footer"><span id="frame-detail">/camera/image_raw</span><span id="detection">Detection —</span></div></article>
-<article class="panel test-panel"><p class="eyebrow">SOFTWARE CHECK</p><h2>Run the complete dry run.</h2><p>Generated images travel through the ROS node. We check detection, preset sequencing and camera-loss handling.</p><button id="run-test" class="primary">Run system test <span>↗</span></button><p class="small">Uses generated images in an isolated ROS domain. Never opens a USB serial port.</p>
-<div class="test-result" aria-live="polite"><span id="test-state" class="pill">Not run this session</span><p id="test-detail">Run a test to see current results.</p></div>
-<ol class="checklist"><li>Image messages published</li><li>Red detected & preset sequence run</li><li>Removal rearms detection</li><li>Lost camera triggers a fault</li></ol>
-</article></section>
-<section class="armsection"><article class="panel arm-panel"><div class="panel-head"><h2>Arm motion</h2><div class="tabs" aria-label="Pose source"><button id="arm-live-tab" class="selected" aria-pressed="true">Live pose</button><button id="arm-test-tab" aria-pressed="false">Test pose</button></div><button id="arm-full" class="iconbtn" title="Fullscreen" aria-label="Show arm view fullscreen">⛶</button></div><div class="armview"><canvas id="arm-canvas" role="img" aria-label="Three-dimensional view of the commanded arm pose"></canvas><span id="arm-label" class="image-label">NO POSE DATA</span><span class="arm-hint">Drag to orbit</span></div><div class="viewer-footer"><span id="arm-detail">Commanded angles from /arm/joint_states</span><span id="arm-caveat">Link mapping assumed · not measured feedback</span></div><div class="joints" id="joint-readout"></div></article></section>
-<section class="armsection"><article class="panel"><div class="panel-head"><h2>Teach pick positions</h2><span id="calib-state" class="pill">0 points</span></div><p class="small">Put the object in view, jog the arm until the gripper reaches it, then capture. Three points minimum, four corners is better. The arm then reaches for whatever it sees rather than a fixed pose.</p><div class="jog-actions"><button id="calib-capture" class="primary">Capture point</button><button id="calib-clear">Clear</button><span id="calib-reply" class="small"></span></div><h3 class="devices-title">Gripper travel</h3><p class="small">Jog the gripper until it is fully open without straining, capture. Then close it on the object until it just grips — not further: a stalled servo draws maximum current and is what browns out the board.</p><div class="jog-actions"><button id="grip-open">Set as OPEN</button><button id="grip-closed">Set as CLOSED</button><span id="grip-reply" class="small"></span></div><pre id="calib-yaml" class="small" style="margin-top:14px"></pre></article></section>
-<section class="armsection"><article class="panel jog-panel"><div class="panel-head"><h2>Manual jog</h2><span id="jog-state" class="pill">Checking…</span></div><p id="jog-note" class="small">Publishes to /arm/manual_pose. The ROS node stays the only thing holding the serial port, so joint limits and the watchdog still apply.</p><div id="jog-grid" class="jogs"></div><p id="jog-keys" class="keys"></p><div class="jog-actions"><button id="jog-home" class="primary">All joints home</button><button id="jog-release">Release (stop refreshing)</button><span id="jog-reply" class="small"></span></div></article></section>
-<section class="armsection"><article class="panel"><div class="panel-head"><h2>Node control</h2><span id="node-state" class="pill">Checking…</span></div><p class="small">Restart reopens the serial port and commands home, so the arm moves. The camera and this page keep running either way.</p><div class="jog-actions"><button id="node-restart" class="primary">Restart arm node</button><button id="node-stop">Stop node</button><span id="node-reply" class="small"></span></div></article></section>
-<section class="bottom"><article class="panel"><div class="panel-head"><h2>Raspberry Pi</h2><span class="small" id="host">—</span></div><p id="model">Checking model…</p><div class="metrics"><div><span>Temperature</span><strong id="temp">—</strong></div><div><span>Disk free</span><strong id="disk">—</strong></div><div><span>Uptime</span><strong id="uptime">—</strong></div></div><h3 class="devices-title">Connected serial adapters</h3><ul id="devices" class="devices"></ul></article>
-<article class="panel"><div class="panel-head"><h2>Test output</h2><span class="small">Latest run</span></div><pre id="output">No test has been run since the dashboard started.</pre></article></section>
-<footer><span>ARM LAB / Hiwonder + ESP32 + ROS 2</span><span id="updated">Waiting for status</span></footer>
-</main></body></html>
+
+<section class="stage">
+  <article class="panel camera-panel">
+    <div class="panel-head">
+      <h2>Live vision</h2>
+      <div class="tabs" aria-label="Image source">
+        <button id="live-tab" class="selected" aria-pressed="true">Live camera</button>
+        <button id="test-tab" aria-pressed="false">Test images</button>
+      </div>
+      <button id="frame-full" class="iconbtn" title="Fullscreen (f)" aria-label="Show camera fullscreen">⛶</button>
+    </div>
+    <div class="viewer">
+      <img id="frame" alt="Camera image" hidden>
+      <div id="empty">
+        <div class="camera-icon">◎</div>
+        <h3>Waiting for the camera</h3>
+        <p>No images have arrived yet.<br>Check camera power and its network connection.</p>
+      </div>
+      <span id="image-label" class="image-label">LIVE SOURCE · NO FRAMES</span>
+    </div>
+    <div class="viewer-footer">
+      <span id="frame-detail" class="mono">/camera/image_raw</span>
+      <span id="detection">Detection —</span>
+    </div>
+  </article>
+
+  <article class="panel arm-panel">
+    <div class="panel-head">
+      <h2>Arm pose simulation</h2>
+      <div class="tabs" aria-label="Pose source">
+        <button id="arm-live-tab" class="selected" aria-pressed="true">Live pose</button>
+        <button id="arm-test-tab" aria-pressed="false">Test pose</button>
+      </div>
+      <button id="arm-full" class="iconbtn" title="Fullscreen" aria-label="Show arm view fullscreen">⛶</button>
+    </div>
+    <div class="armview">
+      <canvas id="arm-canvas" role="img" aria-label="Three-dimensional view of the commanded arm pose"></canvas>
+      <span id="arm-label" class="image-label">NO POSE DATA</span>
+      <span class="arm-hint">Drag to orbit</span>
+    </div>
+    <div class="joints" id="joint-readout"></div>
+    <div class="viewer-footer">
+      <span id="arm-detail" class="mono">Commanded angles from /arm/joint_states</span>
+      <span id="arm-caveat">Link mapping assumed · not measured feedback</span>
+    </div>
+  </article>
+</section>
+
+<section class="deck" id="controls">
+  <div class="deck-tabs" role="tablist" aria-label="Control panels">
+    <button role="tab" id="tab-jog" aria-controls="pane-jog" aria-selected="true" class="selected">Manual jog</button>
+    <button role="tab" id="tab-teach" aria-controls="pane-teach" aria-selected="false">Teach pick positions</button>
+    <button role="tab" id="tab-node" aria-controls="pane-node" aria-selected="false">Node control</button>
+  </div>
+
+  <article class="panel jog-panel" id="pane-jog" role="tabpanel" aria-labelledby="tab-jog">
+    <div class="panel-head">
+      <h2>Move the arm</h2>
+      <span id="jog-state" class="pill">Checking…</span>
+    </div>
+    <p id="jog-note" class="small">Publishes to /arm/manual_pose. The ROS node stays the only thing holding the serial port, so joint limits and the watchdog still apply.</p>
+    <div id="jog-grid" class="jogs"></div>
+    <p id="jog-keys" class="keys"></p>
+    <div class="jog-actions">
+      <button disabled id="jog-home" class="primary">Home all joints</button>
+      <button disabled id="jog-release">Release control</button>
+      <span role="status" id="jog-reply" class="small mono"></span>
+    </div>
+  </article>
+
+  <article class="panel" id="pane-teach" role="tabpanel" aria-labelledby="tab-teach" hidden>
+    <div class="panel-head">
+      <h2>Teach pick positions</h2>
+      <span id="calib-state" class="pill">0 points</span>
+    </div>
+    <p class="small">Save the positions your arm needs to reach objects in the camera view.</p>
+    <ol class="teach-steps">
+      <li><b>1</b><span>Place an object in the camera view.</span></li>
+      <li><b>2</b><span>Use manual jog to line up the gripper.</span></li>
+      <li><b>3</b><span>Capture at least 3 positions. Four corners is better.</span></li>
+    </ol>
+    <div class="jog-actions">
+      <button disabled id="calib-capture" class="primary">Capture point</button>
+      <button disabled id="calib-clear">Clear</button>
+      <span role="status" id="calib-reply" class="small mono"></span>
+    </div>
+    <h3 class="subhead">Gripper travel</h3>
+    <p class="small">Jog the gripper until it is fully open without straining, capture. Then close it on the object until it just grips — not further: a stalled servo draws maximum current and is what browns out the board.</p>
+    <div class="jog-actions">
+      <button disabled id="grip-open">Set as OPEN</button>
+      <button disabled id="grip-closed">Set as CLOSED</button>
+      <span id="grip-reply" class="small mono"></span>
+    </div>
+    <details class="technical">
+      <summary>Calibration configuration</summary>
+      <pre id="calib-yaml" class="small"></pre>
+    </details>
+  </article>
+
+  <article class="panel" id="pane-node" role="tabpanel" aria-labelledby="tab-node" hidden>
+    <div class="panel-head">
+      <h2>Arm service</h2>
+      <span id="node-state" class="pill">Checking…</span>
+    </div>
+    <p class="small">Restart reopens the serial port and commands home, so the arm moves. The camera and this page keep running either way.</p>
+    <div class="jog-actions">
+      <button disabled id="node-restart" class="primary">Restart service · moves arm</button>
+      <button disabled id="node-stop">Stop service</button>
+      <span role="status" id="node-reply" class="small mono"></span>
+    </div>
+  </article>
+</section>
+
+<section class="diagnostics" id="diagnostics">
+  <article class="panel test-panel">
+    <div class="panel-head">
+      <h2>Software check</h2>
+      <span id="test-state" class="pill">Not run this session</span>
+    </div>
+    <p class="small">Test image detection and the programmed sequence without moving the hardware. Uses generated images in an isolated ROS domain, and never opens a USB serial port.</p>
+    <button id="run-test" class="primary">Run system test <span>↗</span></button>
+    <p id="test-detail" class="small" aria-live="polite">Run a test to see current results.</p>
+    <ol class="checklist">
+      <li>Image messages published</li>
+      <li>Red detected &amp; preset sequence run</li>
+      <li>Removal rearms detection</li>
+      <li>Lost camera triggers a fault</li>
+    </ol>
+  </article>
+
+  <article class="panel health-panel">
+    <div class="panel-head">
+      <h2>Raspberry Pi</h2>
+      <span class="small mono" id="host">—</span>
+    </div>
+    <p class="small" id="model">Checking model…</p>
+    <div class="metrics">
+      <div><span>Temperature</span><strong id="temp">—</strong></div>
+      <div><span>Disk free</span><strong id="disk">—</strong></div>
+      <div><span>Uptime</span><strong id="uptime">—</strong></div>
+    </div>
+    <h3 class="subhead">Connected serial adapters</h3>
+    <ul id="devices" class="devices"></ul>
+  </article>
+
+  <article class="panel log-panel">
+    <div class="panel-head">
+      <h2>Test output</h2>
+      <span class="small">Latest run</span>
+    </div>
+    <pre id="output">No test has been run since the dashboard started.</pre>
+  </article>
+</section>
+
+<footer>
+  <span>ARM LAB / Hiwonder + ESP32 + ROS 2</span>
+  <span id="updated" class="mono">Waiting for status</span>
+</footer>
+
+</main>
+</body>
+</html>
