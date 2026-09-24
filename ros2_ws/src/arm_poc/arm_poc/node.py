@@ -1,4 +1,5 @@
 import math
+import socket
 import threading
 import time
 
@@ -122,11 +123,75 @@ class DeviceCameraReader:
                     capture.release()
 
 
+class TcpPort:
+    """Wraps a TCP socket so exchange()/drain()/handshake() below can talk to
+    the arm controller's Wi-Fi command port exactly as they talk to a
+    pyserial Serial object: write(bytes), readline() and read(n) that return
+    b'' on timeout rather than raising, reset_input_buffer(), and close().
+    """
+
+    def __init__(self, host, port, timeout):
+        self.timeout = timeout
+        self.sock = socket.create_connection((host, port), timeout=timeout)
+        self.sock.settimeout(timeout)
+        self._buf = bytearray()
+
+    def write(self, data):
+        self.sock.sendall(data)
+
+    def _fill(self, want):
+        try:
+            chunk = self.sock.recv(max(want, 256))
+        except (socket.timeout, OSError):
+            return False
+        if not chunk:
+            return False
+        self._buf.extend(chunk)
+        return True
+
+    def read(self, size=1):
+        if not self._buf and not self._fill(size):
+            return b''
+        out = bytes(self._buf[:size])
+        del self._buf[:size]
+        return out
+
+    def readline(self):
+        while b'\n' not in self._buf:
+            if not self._fill(256):
+                return b''
+        idx = self._buf.index(b'\n') + 1
+        line = bytes(self._buf[:idx])
+        del self._buf[:idx]
+        return line
+
+    def reset_input_buffer(self):
+        # No boot-ROM chatter to flush on Wi-Fi the way opening a USB serial
+        # port has; this only drops whatever the controller sent before we
+        # started reading, e.g. a reply to a command from a prior connection.
+        self._buf.clear()
+        self.sock.settimeout(0)
+        try:
+            while self.sock.recv(4096):
+                pass
+        except OSError:
+            pass
+        finally:
+            self.sock.settimeout(self.timeout)
+
+    def close(self):
+        try:
+            self.sock.close()
+        except OSError:
+            pass
+
+
 class ArmPOC(Node):
     def __init__(self):
         super().__init__('arm_poc')
         defaults = {
             'camera_url': '', 'dry_run': True, 'serial_port': '',
+            'control_host': '', 'control_port': 3333,
             'home_pose': [90, 90, 90, 90], 'trigger_pose': [90, 90, 90, 90],
             'min_angles': [80, 80, 80, 80], 'max_angles': [100, 100, 100, 100],
             'target_color': 'red', 'color_fraction': 0.05, 'stable_frames': 3,
@@ -178,11 +243,19 @@ class ArmPOC(Node):
             self.get_logger().warn(
                 'Manual control ENABLED: /arm/manual_pose can move the arm')
         if not self.p['dry_run']:
-            self.port = serial.Serial(self.p['serial_port'], 115200,
-                                      timeout=self.p['serial_timeout'],
-                                      write_timeout=self.p['serial_timeout'])
+            if self.p['control_host']:
+                self.port = TcpPort(self.p['control_host'], int(self.p['control_port']),
+                                    self.p['serial_timeout'])
+            elif self.p['serial_port']:
+                self.port = serial.Serial(self.p['serial_port'], 115200,
+                                          timeout=self.p['serial_timeout'],
+                                          write_timeout=self.p['serial_timeout'])
+            else:
+                raise ValueError(
+                    'Set control_host (Wi-Fi) or serial_port (USB) when dry_run is false')
             try:
-                time.sleep(2)  # USB opening resets the ESP32.
+                if isinstance(self.port, serial.Serial):
+                    time.sleep(2)  # USB opening resets the ESP32.
                 self.handshake()
             except Exception:
                 self.port.close()
@@ -373,7 +446,7 @@ class ArmPOC(Node):
         if self.port:
             try:
                 self.port.write(b'STOP\n')
-            except serial.SerialException:
+            except (serial.SerialException, OSError):
                 pass
 
     def tick(self):
@@ -496,7 +569,7 @@ class ArmPOC(Node):
         if self.port:
             try:
                 self.port.write(b'STOP\n')
-            except serial.SerialException:
+            except (serial.SerialException, OSError):
                 pass
             finally:
                 self.port.close()

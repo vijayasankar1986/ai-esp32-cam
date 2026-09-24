@@ -4,7 +4,7 @@
 
 Use a regulated servo supply at the voltage specified by your actual servos (commonly 5 V for SG90). Size its current capacity for all four motors including stall/startup current; use supplier specifications. Do not power the four servos from the Pi or ESP32 3.3 V pin.
 
-Connect servo supply negative, all servo grounds, and controller ESP32 GND together. Feed servo positive wires from the servo supply. Power the controller over USB from the Pi. Do not connect the external servo positive rail to the ESP32 USB/5 V rail without checking the board's power design. Use a physical switch to cut servo power; software cannot guarantee an emergency stop or prevent an unpowered arm falling.
+Connect servo supply negative, all servo grounds, and controller ESP32 GND together. Feed servo positive wires from the servo supply. The controller commands over Wi-Fi now, not a USB data cable, so power it from any 5 V USB source (wall adapter, power bank, or still the Pi) — it no longer needs to be tethered to the Pi. Do not connect the external servo positive rail to the ESP32 USB/5 V rail without checking the board's power design. Use a physical switch to cut servo power; software cannot guarantee an emergency stop or prevent an unpowered arm falling.
 
 ## Signal connections
 
@@ -28,7 +28,7 @@ Servos are blue SG90-class 9 g units from the KitKraft 3D-printed kit, so the
 usable travel is limited by the mechanism, not the servo, which is what
 `MIN_ANGLE` and `MAX_ANGLE` are for.
 
-Each servo has ground, supply, and signal; verify its wire colours against the servo documentation. Camera remains a separate device on Wi-Fi. Use a data-capable USB cable between Pi and controller.
+Each servo has ground, supply, and signal; verify its wire colours against the servo documentation. Camera and arm controller are both separate devices on Wi-Fi now; a USB cable to the controller is only needed to flash firmware or to power it if you're not using a standalone supply.
 
 ## Servo power on this build
 
@@ -60,8 +60,10 @@ node commands the return.
 1. Support the arm and disconnect servo horns/linkages. Start with one unloaded servo.
 2. Confirm GPIO assignments and supply wiring. Firmware defaults to no PWM output and refuses motion until `CALIBRATED` is enabled.
 3. With the servo unloaded, review the example 1000–2000 us pulse mapping, narrow 80–100 degree limits, and 90 degree startup position. Set `CALIBRATED = true` only for this controlled commissioning step, then upload.
-4. Jog with `python tools/jog.py COM6` (or the `/dev/serial/by-id/...` path on
-   the Pi). Keys 1-4 pick a joint, `+`/`-` step one degree, `[`/`]` step five,
+4. Jog with `python tools/jog.py 192.168.1.50` (the controller's IP, read from
+   its USB-serial debug output at boot), or `python tools/jog.py COM6` /
+   the `/dev/serial/by-id/...` path if you're still wired for USB. Keys 1-4
+   pick a joint, `+`/`-` step one degree, `[`/`]` step five,
    space sends `STOP`, `q` quits. All configured outputs become active on the
    first accepted `MOVE`, so connect only the servo being tested.
 

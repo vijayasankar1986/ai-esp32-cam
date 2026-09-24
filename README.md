@@ -9,7 +9,7 @@ Starter project for your Hiwonder ESP32-CAM, four-servo mechanical arm, separate
 ```text
 Hiwonder camera -- HTTP JPEG/MJPEG over Wi-Fi --> Raspberry Pi / ROS 2
                                                      |
-                                             USB serial, 115200
+                                      TCP, port 3333, over Wi-Fi
                                                      |
                                                Separate ESP32
                                                      |

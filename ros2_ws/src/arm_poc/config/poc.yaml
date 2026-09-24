@@ -10,10 +10,17 @@ arm_poc:
     camera_url: "/dev/v4l/by-id/usb-Ingenic_Semiconductor_Co._Ltd_HD_Web_Camera_1234567890-video-index0"
     # ESP32-CAM over Wi-Fi, the previous source:
     # camera_url: "http://192.168.1.2/capture"
-    # HARDWARE MODE, set at the operator's request. The node opens the serial
-    # port and commands home on startup, so the arm moves as soon as it runs.
-    # Set true to go back to observing only.
+    # HARDWARE MODE, set at the operator's request. The node opens the
+    # controller connection and commands home on startup, so the arm moves
+    # as soon as it runs. Set true to go back to observing only.
     dry_run: false
+    # Wi-Fi control, the current link: the arm_controller firmware connects
+    # to this TCP port instead of a USB cable to the Pi. Read the IP from the
+    # controller's own USB-serial debug output at boot, or set HOST_IP in its
+    # secrets.h to fix it. Leave empty to fall back to serial_port below.
+    control_host: "192.168.1.50"
+    control_port: 3333
+    # Previous link, USB serial. Only used when control_host is empty.
     serial_port: "/dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0"
     home_pose: [90, 90, 90, 90]
     trigger_pose: [90, 90, 90, 90] # Deliberately no motion until calibrated

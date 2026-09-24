@@ -36,6 +36,11 @@ serial with servo power switched off. No firmware was flashed.
 Use the CP2102 path for `serial_port` in `poc.yaml`, and confirm it replies
 `READY` to `PING` before enabling hardware mode.
 
+**Update, 2026-09-24:** the controller now runs the Wi-Fi firmware (see
+docs/SETUP.md, section 4) and is commanded over TCP via `control_host` in
+`poc.yaml`, not this USB serial path. The CP2102 port above remains valid as
+the `serial_port` fallback and for reading the controller's boot log.
+
 The camera exposes no serial configuration interface. It is silent to a bare
 newline and to `help`, `AT`, `?` and `status`, so its Wi-Fi mode can only be
 changed through its own web page at `192.168.5.1`. USB carries power and

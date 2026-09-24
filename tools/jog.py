@@ -7,9 +7,10 @@ target, because the firmware detaches PWM two seconds after the last accepted
 MOVE. Typing MOVE into a terminal makes the arm hold for two seconds and then
 go limp.
 
-    python tools/jog.py COM6                 # Windows
-    python tools/jog.py /dev/ttyUSB0         # Linux
-    python tools/jog.py COM6 --min 70 --max 110
+    python tools/jog.py 192.168.1.50         # Wi-Fi controller (host[:port], default port 3333)
+    python tools/jog.py COM6                 # Windows, USB serial
+    python tools/jog.py /dev/ttyUSB0         # Linux, USB serial
+    python tools/jog.py 192.168.1.50 --min 70 --max 110
 
 Safety:
   * Requires CALIBRATED = true in the firmware. Until then every MOVE is
@@ -21,6 +22,7 @@ Safety:
     an unpowered joint falls.
 """
 import argparse
+import socket
 import sys
 import threading
 import time
@@ -28,7 +30,7 @@ import time
 try:
     import serial
 except ImportError:
-    sys.exit('pyserial is required:  python -m pip install pyserial')
+    serial = None
 
 try:
     import msvcrt
@@ -58,6 +60,50 @@ HELP = """
   space     STOP, release torque  q       quit (sends STOP)
 """
 
+DEFAULT_TCP_PORT = 3333
+
+
+def is_serial_target(target):
+    """True for a COM port or /dev path; anything else is a Wi-Fi host[:port]."""
+    return target.upper().startswith('COM') or '/' in target
+
+
+class SocketLink:
+    """Thin readline/write/close shim over a TCP socket, mirroring the
+    handful of pyserial calls Controller below uses.
+    """
+
+    def __init__(self, host, port, timeout):
+        self.sock = socket.create_connection((host, port), timeout=timeout)
+        self.sock.settimeout(timeout)
+        self._buf = bytearray()
+
+    def write(self, data):
+        self.sock.sendall(data)
+
+    def readline(self):
+        while b'\n' not in self._buf:
+            try:
+                chunk = self.sock.recv(256)
+            except (socket.timeout, OSError):
+                return b''
+            if not chunk:
+                return b''
+            self._buf.extend(chunk)
+        idx = self._buf.index(b'\n') + 1
+        line = bytes(self._buf[:idx])
+        del self._buf[:idx]
+        return line
+
+    def reset_input_buffer(self):
+        self._buf.clear()
+
+    def close(self):
+        try:
+            self.sock.close()
+        except OSError:
+            pass
+
 
 class Controller:
     def __init__(self, port, lower, upper, start):
@@ -66,8 +112,14 @@ class Controller:
         self.lock = threading.Lock()
         self.alive = True
         self.status = 'connecting'
-        self.port = serial.Serial(port, 115200, timeout=0.4, write_timeout=0.4)
-        time.sleep(2)               # Opening the port resets the ESP32.
+        if is_serial_target(port):
+            if serial is None:
+                sys.exit('pyserial is required for a USB port:  python -m pip install pyserial')
+            self.port = serial.Serial(port, 115200, timeout=0.4, write_timeout=0.4)
+            time.sleep(2)           # Opening the port resets the ESP32.
+        else:
+            host, _, tcp_port = port.partition(':')
+            self.port = SocketLink(host, int(tcp_port or DEFAULT_TCP_PORT), timeout=0.4)
         self.port.reset_input_buffer()
         if self.command(b'PING\n') != b'READY':
             raise SystemExit('Controller did not answer PING with READY')
@@ -92,8 +144,8 @@ class Controller:
         while self.alive:
             try:
                 self.send_pose()
-            except serial.SerialException as exc:
-                self.status = 'serial error: %s' % exc
+            except (getattr(serial, 'SerialException', OSError), OSError) as exc:
+                self.status = 'link error: %s' % exc
                 self.alive = False
             time.sleep(0.4)
 
@@ -114,7 +166,7 @@ class Controller:
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument('port', help='COM6, or /dev/serial/by-id/...')
+    ap.add_argument('port', help='192.168.1.50[:3333] for Wi-Fi, or COM6 / /dev/serial/by-id/... for USB')
     ap.add_argument('--min', type=int, default=80, dest='lower')
     ap.add_argument('--max', type=int, default=100, dest='upper')
     ap.add_argument('--start', type=int, default=90)

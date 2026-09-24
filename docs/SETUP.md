@@ -40,11 +40,11 @@ Optional desktop viewer: install `ros-jazzy-rqt-image-view`, run `ros2 run rqt_i
 
 ## 4. Servo controller
 
-Open `firmware/arm_controller/arm_controller.ino` in Arduino IDE. Install **esp32 by Espressif Systems, version 3.x**, choose your actual controller board and USB port, and upload. Complete HARDWARE.md calibration first. No external servo library is required.
+Copy `firmware/arm_controller/secrets.h.example` to `secrets.h` and fill in your Wi-Fi credentials (gitignored, never commit it). Open `firmware/arm_controller/arm_controller.ino` in Arduino IDE. Install **esp32 by Espressif Systems, version 3.x**, choose your actual controller board and USB port, and upload. Complete HARDWARE.md calibration first. No external servo library is required.
 
-On the Pi, identify the controller with `ls -l /dev/serial/by-id/`; use its stable device path for `serial_port`. Where required, add your user to `dialout` with `sudo usermod -aG dialout "$USER"`, then log out and back in. Close the Arduino serial monitor before ROS opens the port.
+The firmware joins your Wi-Fi and listens on TCP port 3333. Open the Arduino serial monitor once after flashing to read the IP address it prints at boot, then set that as `control_host` in `poc.yaml` (or set `HOST_IP` in `secrets.h` beforehand to fix the address). USB serial is now only needed to flash firmware and read that boot log; it is not the command path, so `serial_port` in `poc.yaml` is a fallback only used when `control_host` is left empty.
 
-The protocol at 115200 baud is newline-delimited ASCII:
+The protocol, unchanged from the old 115200-baud serial line, is newline-delimited ASCII sent over that TCP connection:
 
 ```text
 PING                 -> READY
