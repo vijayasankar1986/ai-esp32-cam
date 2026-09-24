@@ -44,6 +44,19 @@ Verify with `ros2 topic hz /scan` and `ros2 topic echo /scan --once`.
 `ydlidar_ros2_driver`'s own `params/X2.yaml` after fetching, in case upstream
 has changed defaults since this was written.
 
+## Verified 2026-09-24
+
+`/etc/udev/rules.d/99-ydlidar.rules` installed with `KERNELS=="1-1.4"`
+(the Pi's port the X2 was plugged into). `/dev/ydlidar -> ttyUSB0` resolves
+correctly even with the arm controller unplugged, and
+`ros2 launch arm_lidar x2.launch.py` holds `/scan` at a steady ~12 Hz.
+
+Benign, ignorable log line at startup: `Real points 251 > fixed points 250`.
+The SDK's fixed buffer for this sample rate is one point short of what the
+unit actually returns per revolution; nothing breaks, the scan still
+publishes every cycle. Lowering `sample_rate` slightly would quiet it if it
+ever becomes annoying.
+
 ## Not yet done
 
 - Nothing in `arm_poc` or the dashboard consumes `/scan` yet; this only gets
@@ -51,5 +64,5 @@ has changed defaults since this was written.
 - No mount point or frame transform from `laser_frame` to the arm's base is
   defined in `arm_description`'s URDF.
 - No systemd unit; run the launch file manually for now.
-- The udev rule ties `/dev/ydlidar` to whichever physical USB port it was
-  installed for; it does not travel with the device if moved to another port.
+- The udev rule ties `/dev/ydlidar` to port `1-1.4` specifically; moving the
+  LiDAR to a different USB port needs the rule redone (see setup steps above).
