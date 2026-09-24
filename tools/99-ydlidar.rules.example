@@ -1,10 +1,14 @@
-# Copy to /etc/udev/rules.d/99-ydlidar.rules and fill in ATTRS{serial}.
+# Copy to /etc/udev/rules.d/99-ydlidar.rules and fill in the KERNELS port path.
 #
-# The X2's bundled adapter uses the same CP2102 chip (10c4:ea60) as the arm
-# controller's board, so matching on vendor/product alone would symlink
-# whichever of the two enumerates first. Find the LiDAR's own serial after
-# plugging it in with:
-#     udevadm info -a -n /dev/ttyUSBx | grep '{serial}' | head -1
-# then reload with: sudo udevadm control --reload-rules && sudo udevadm trigger
+# Confirmed 2026-09-24: the X2's bundled adapter and the arm controller's
+# board are both CP2102 (10c4:ea60) with the *same* unprogrammed serial
+# "0001", so vendor/product/serial cannot tell them apart when both are
+# plugged in at once. Keying on the physical USB port instead, which is
+# stable as long as the LiDAR stays in that port:
+#     udevadm info -q path -n /dev/ttyUSBx
+# gives a path ending in .../usb1/1-1/1-1.4/1-1.4:1.0/ttyUSB0/...; the
+# "1-1.4" segment is the KERNELS value below. Re-run this after moving the
+# LiDAR to a different physical port.
+# Reload with: sudo udevadm control --reload-rules && sudo udevadm trigger
 
-SUBSYSTEM=="tty", ATTRS{idVendor}=="10c4", ATTRS{idProduct}=="ea60", ATTRS{serial}=="FILL_IN_AFTER_PLUGGING_IN", SYMLINK+="ydlidar", MODE="0666", GROUP="dialout"
+SUBSYSTEM=="tty", KERNELS=="FILL_IN_PORT_E.G._1-1.4", ATTRS{idVendor}=="10c4", ATTRS{idProduct}=="ea60", SYMLINK+="ydlidar", MODE="0666", GROUP="dialout"

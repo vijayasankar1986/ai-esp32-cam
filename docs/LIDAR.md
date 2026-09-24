@@ -1,7 +1,12 @@
 # YDLIDAR X2/X2L
 
-Not verified on hardware yet: the unit had not been plugged into the Pi as
-of 2026-09-24. This documents the intended setup; confirm each step as you go.
+Verified on hardware 2026-09-24: connected on `/dev/ttyUSB0` at 115200 baud,
+health check passed, `/scan` published at ~12 Hz.
+
+The X2's bundled adapter and the arm controller's board both report vendor
+`10c4`, product `ea60` (CP2102) **and the same unprogrammed serial `0001`**,
+so they cannot be told apart by USB descriptor alone when both are plugged
+in together. The udev rule below keys on the physical port instead.
 
 ## Wiring
 
@@ -14,13 +19,13 @@ required; the adapter also switches the spin motor over its DTR line.
 1. `tools/fetch_ydlidar_driver.sh` — builds and installs the YDLidar-SDK,
    then clones `ydlidar_ros2_driver` into `ros2_ws/src` (gitignored there;
    it's third-party code, not vendored into this repo).
-2. Plug in the LiDAR, then `ls /dev/ttyUSB*` and
-   `udevadm info -a -n /dev/ttyUSBx | grep '{serial}'` to read its serial,
-   since it uses the same CP2102 vendor/product IDs as the arm controller and
-   so can't be told apart by those alone.
+2. Plug in the LiDAR on its own, then `ls /dev/ttyUSB*` and
+   `udevadm info -q path -n /dev/ttyUSBx` to read its physical port (the
+   segment like `1-1.4` before the `:1.0`).
 3. Copy `tools/99-ydlidar.rules.example` to `/etc/udev/rules.d/99-ydlidar.rules`,
-   fill in that serial, then `sudo udevadm control --reload-rules && sudo udevadm trigger`.
-   Confirm `/dev/ydlidar` appears.
+   fill in that port, then `sudo udevadm control --reload-rules && sudo udevadm trigger`.
+   Confirm `/dev/ydlidar` appears. If the LiDAR is later moved to a different
+   USB port, update the rule and reload again.
 4. `cd ros2_ws && colcon build --symlink-install --packages-select ydlidar_ros2_driver arm_lidar`
 
 ## Running
@@ -46,3 +51,5 @@ has changed defaults since this was written.
 - No mount point or frame transform from `laser_frame` to the arm's base is
   defined in `arm_description`'s URDF.
 - No systemd unit; run the launch file manually for now.
+- The udev rule ties `/dev/ydlidar` to whichever physical USB port it was
+  installed for; it does not travel with the device if moved to another port.
