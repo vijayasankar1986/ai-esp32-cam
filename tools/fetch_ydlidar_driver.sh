@@ -26,6 +26,10 @@ if [ ! -d "$WS/src/ydlidar_ros2_driver" ]; then
   git clone https://github.com/YDLIDAR/ydlidar_ros2_driver.git "$WS/src/ydlidar_ros2_driver"
 fi
 
+# Upstream targets an older rclcpp; without this, colcon build fails on
+# ROS 2 Jazzy with "no matching function for call to declare_parameter".
+"$(dirname "${BASH_SOURCE[0]}")/patch_ydlidar_jazzy.sh" "$WS/src/ydlidar_ros2_driver"
+
 echo
 echo "SDK installed. Build the ROS 2 driver with:"
 echo "    cd $WS && colcon build --symlink-install --packages-select ydlidar_ros2_driver arm_lidar"
