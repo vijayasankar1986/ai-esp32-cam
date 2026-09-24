@@ -3,6 +3,7 @@ __pycache__/
 ros2_ws/build/
 ros2_ws/install/
 ros2_ws/log/
+ros2_ws/src/ydlidar_ros2_driver/
 firmware/camera_station/secrets.h
 secrets.h
 firmware/*/build/

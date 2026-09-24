@@ -1,0 +1,27 @@
+# YDLIDAR X2/X2L parameters for ydlidar_ros2_driver's node. Verify these
+# against the upstream params/X2.yaml in the fetched driver (see
+# tools/fetch_ydlidar_driver.sh) if the driver version changes; node name
+# must match its executable's default node name.
+ydlidar_ros2_driver_node:
+  ros__parameters:
+    port: /dev/ydlidar   # Stable symlink from tools/99-ydlidar.rules, not /dev/ttyUSBn
+    frame_id: laser_frame
+    ignore_array: ""
+    baudrate: 115200
+    lidar_type: 1          # TYPE_TRIANGLE
+    device_type: 0         # YDLIDAR_TYPE_SERIAL
+    sample_rate: 3
+    abnormal_check_count: 4
+    fixed_resolution: true
+    reversion: false
+    inverted: true
+    auto_reconnect: true
+    isSingleChannel: true   # X2/X2L is single-channel; wrong value reads no scans
+    intensity: false
+    support_motor_dtr: true # X2 motor is switched by the adapter's DTR line
+    angle_max: 180.0
+    angle_min: -180.0
+    range_max: 8.0
+    range_min: 0.01
+    frequency: 7.0
+    invalid_range_is_inf: false

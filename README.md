@@ -24,6 +24,7 @@ The ROS node publishes `/camera/image_raw`, `/vision/color_detected` and `/arm/j
 - [Pi installation and operation](docs/SETUP.md)
 - [Acceptance checks and troubleshooting](docs/TESTING.md)
 - [Verified Raspberry Pi connection and deployment](docs/PI_DEPLOYMENT.md)
+- [YDLIDAR X2 setup](docs/LIDAR.md)
 - [ESP32 controller firmware](firmware/arm_controller/arm_controller.ino)
 - [Camera station-mode firmware](docs/CAMERA_FIRMWARE.md)
 - [Camera browser object-detection firmware](docs/CAMERA_OBJECT_DETECT.md)
