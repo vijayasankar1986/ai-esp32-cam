@@ -244,7 +244,13 @@ void setup() {
 
   WiFi.mode(WIFI_AP_STA);
 
-  //WiFi.config(IPAddress(192, 168, 201, 100), IPAddress(192, 168, 201, 2), IPAddress(255, 255, 255, 0));
+  // Optional fixed address so camera_url never has to change. HOST_IP empty
+  // (the default) leaves this as plain DHCP.
+  if (strlen(HOST_IP) > 0) {
+    IPAddress ip, gw, mask;
+    if (ip.fromString(HOST_IP) && gw.fromString(GATEWAY_IP) && mask.fromString(SUBNET_MASK))
+      WiFi.config(ip, gw, mask);
+  }
 
   WiFi.begin(ssid, password);
 
