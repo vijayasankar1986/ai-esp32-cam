@@ -41,6 +41,13 @@ docs/SETUP.md, section 4) and is commanded over TCP via `control_host` in
 `poc.yaml`, not this USB serial path. The CP2102 port above remains valid as
 the `serial_port` fallback and for reading the controller's boot log.
 
+**Update, 2026-09-25:** static addresses assigned via `HOST_IP` in each
+board's `secrets.h`, so DHCP no longer moves them: Pi `192.168.1.9`, ESP32-CAM
+`192.168.1.10`, arm controller `192.168.1.11`. `control_host` in `poc.yaml`
+updated to `192.168.1.11`. The controller must be reflashed with the new
+`secrets.h` (it was not connected to reflash at the time of this edit), after
+which `arm-node.service` should stop failing with a connect timeout.
+
 The camera exposes no serial configuration interface. It is silent to a bare
 newline and to `help`, `AT`, `?` and `status`, so its Wi-Fi mode can only be
 changed through its own web page at `192.168.5.1`. USB carries power and

@@ -8,8 +8,9 @@ arm_poc:
     # USB webcam on the Pi (Ingenic HD Web Camera), read directly through V4L2.
     # The by-id path follows the camera even if video0/video1 swap at boot.
     camera_url: "/dev/v4l/by-id/usb-Ingenic_Semiconductor_Co._Ltd_HD_Web_Camera_1234567890-video-index0"
-    # ESP32-CAM over Wi-Fi, the previous source:
-    # camera_url: "http://192.168.1.2/capture"
+    # ESP32-CAM over Wi-Fi, the previous source. Static IP set via HOST_IP
+    # in firmware/camera_station or firmware/object_detect secrets.h.
+    # camera_url: "http://192.168.1.10/capture"
     # HARDWARE MODE, set at the operator's request. The node opens the
     # controller connection and commands home on startup, so the arm moves
     # as soon as it runs. Set true to go back to observing only.
@@ -18,7 +19,7 @@ arm_poc:
     # to this TCP port instead of a USB cable to the Pi. Read the IP from the
     # controller's own USB-serial debug output at boot, or set HOST_IP in its
     # secrets.h to fix it. Leave empty to fall back to serial_port below.
-    control_host: "192.168.1.50"
+    control_host: "192.168.1.11"
     control_port: 3333
     # Previous link, USB serial. Only used when control_host is empty.
     serial_port: "/dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0"
