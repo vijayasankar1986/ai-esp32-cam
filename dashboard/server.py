@@ -54,7 +54,7 @@ STATE = {'ros': False, 'ros_error': '', 'image_count': 0, 'last_image': 0,
 # Pi's USB webcam). Read here directly rather than through ROS, since the node
 # takes one camera. Polled only while someone is watching: the ESP32 answers
 # one request at a time and also serves its own browser detection page.
-WIFI_CAM_URL = os.environ.get('ARM_WIFI_CAM_URL', 'http://192.168.1.2/capture')
+WIFI_CAM_URL = os.environ.get('ARM_WIFI_CAM_URL', 'http://192.168.1.10/capture')
 WIFI_CAM = {'jpeg': None, 'count': 0, 'last': 0.0, 'error': 'Not polled yet',
             'wanted': 0.0}
 WIFI_FRAME = threading.Condition()
